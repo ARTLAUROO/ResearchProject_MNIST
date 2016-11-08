@@ -328,7 +328,8 @@ def main(argv=None):  # pylint: disable=unused-argument
     tf.initialize_all_variables().run()
     print('Initialized!')
     # Loop through training steps.
-    for step in xrange(int(num_epochs * train_size) // BATCH_SIZE):
+    n_steps = int(num_epochs * train_size) // BATCH_SIZE
+    for step in xrange(n_steps):
       # Compute the offset of the current minibatch in the data.
       # Note that we could use better randomization across epochs.
       offset = (step * BATCH_SIZE) % (train_size - BATCH_SIZE)
@@ -343,7 +344,7 @@ def main(argv=None):  # pylint: disable=unused-argument
           [optimizer, loss, learning_rate, train_prediction, merged],
           feed_dict=feed_dict)
 
-      if step % EVAL_FREQUENCY == 0:
+      if step % EVAL_FREQUENCY == 0 or step + 1 == n_steps:
         elapsed_time = time.time() - start_time
         start_time = time.time()
         print('Step %d (epoch %.2f), %.1f ms' %
