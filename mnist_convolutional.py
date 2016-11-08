@@ -40,19 +40,20 @@ IMAGE_SIZE = 28
 NUM_CHANNELS = 1
 PIXEL_DEPTH = 255
 NUM_LABELS = 10
-TRAIN_SIZE = 60000  # Size of the training set.
-TEST_SIZE = 10000  # Size of the test set.
-VALIDATION_SIZE = 5000  # Size of the validation set.
-SEED = None  # Set to None for random seed.
+TRAIN_SIZE = 60000            # Size of the training set.
+TEST_SIZE = 10000             # Size of the test set.
+VALIDATION_SIZE = 5000        # Size of the validation set.
+SEED = None                   # Set to None for random seed.
 BATCH_SIZE = 1024
 NUM_EPOCHS = 2
 EVAL_BATCH_SIZE = BATCH_SIZE
-EVAL_FREQUENCY = 100  # Number of steps between evaluations.
+EVAL_FREQUENCY = 100          # Number of evaluations for an entire run.
 
-TWO_LAYERS = False # If true two conv layers are used, else one
-N_KERNELS_LAYER_1 = 32
-N_KERNELS_LAYER_2 = 64
-N_NODES_FULL_LAYER = 512
+# Are overwritten by main args
+TWO_LAYERS = None             # If true two conv layers are used, else one
+N_KERNELS_LAYER_1 = None
+N_KERNELS_LAYER_2 = None
+N_NODES_FULL_LAYER = None
 
 tf.app.flags.DEFINE_boolean("self_test", False, "True if running a self test.")
 tf.app.flags.DEFINE_boolean('use_fp16', False,
@@ -287,6 +288,14 @@ def main(argv=None):  # pylint: disable=unused-argument
   # Predictions for the test and validation, which we'll compute less often.
   eval_prediction = tf.nn.softmax(model(eval_data))
 
+  # Variables used for summaries
+  validation_error_variable = tf.Variable(100.0)
+  validation_error_summary = tf.scalar_summary('Validation Error Rate', 
+                                                validation_error_variable)
+
+  test_error_variable = tf.Variable(100.0)
+  test_error_summary = tf.scalar_summary('Test Error Rate', test_error_variable)
+
   # Small utility function to evaluate a dataset by feeding batches of data to
   # {eval_data} and pulling the results from {eval_predictions}.
   # Saves memory and enables this to run on smaller GPUs.
@@ -313,6 +322,7 @@ def main(argv=None):  # pylint: disable=unused-argument
   start_time = time.time()
   with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
     merged = tf.merge_all_summaries()
+    
     # Save summary of each separate run in a different dir indicated by datetime 
     def gen_summary_path():
       datetime = time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
@@ -327,6 +337,7 @@ def main(argv=None):  # pylint: disable=unused-argument
     # Run all the initializers to prepare the trainable parameters.
     tf.initialize_all_variables().run()
     print('Initialized!')
+    summary = sess.run(test_error_summary)
     # Loop through training steps.
     n_steps = int(num_epochs * train_size) // BATCH_SIZE
     for step in xrange(n_steps):
@@ -345,21 +356,37 @@ def main(argv=None):  # pylint: disable=unused-argument
           feed_dict=feed_dict)
 
       if step % EVAL_FREQUENCY == 0 or step + 1 == n_steps:
+        summary_writer.add_summary(summary, step)
+
         elapsed_time = time.time() - start_time
         start_time = time.time()
         print('Step %d (epoch %.2f), %.1f ms' %
               (step, float(step) * BATCH_SIZE / train_size,
                1000 * elapsed_time / EVAL_FREQUENCY))
         print('Minibatch loss: %.3f, learning rate: %.6f' % (l, lr))
-        print('Minibatch error: %.1f%%' % error_rate(predictions, batch_labels))
-        print('Validation error: %.1f%%' % error_rate(
-            eval_in_batches(validation_data, sess), validation_labels))
+        print('Minibatch error: %.2f%%' % error_rate(predictions, batch_labels))
+        # assign validation error rate to  its corresponding variable to add it
+        # to the summary
+        validation_error_rate = error_rate(eval_in_batches(validation_data, sess), 
+                                            validation_labels)
+        print('Validation error: %.2f%%' % validation_error_rate)
+        # elaborous way to store the validation summary
+        sess.run(validation_error_variable.assign(validation_error_rate))
+        validation_summary = sess.run(validation_error_summary)
+        summary_writer.add_summary(validation_summary, step)
+
         sys.stdout.flush()
 
         summary_writer.add_summary(summary, step)
-    # Finally print the result!
+
     test_error = error_rate(eval_in_batches(test_data, sess), test_labels)
-    print('Test error: %.1f%%' % test_error)
+    # Finally print the result!
+    print('Test error: %.2f%%' % test_error)
+    # elaborous way to store the test summary
+    sess.run(test_error_variable.assign(test_error))
+    summary = sess.run(test_error_summary)
+    summary_writer.add_summary(summary, n_steps)
+    
     if FLAGS.self_test:
       print('test_error', test_error)
       assert test_error == 0.0, 'expected 0.0 test_error, got %.2f' % (
@@ -369,4 +396,18 @@ def main(argv=None):  # pylint: disable=unused-argument
 
 
 if __name__ == '__main__':
+  if len(sys.argv) is not 5:
+    print('invalid number of arguments')
+    print('Number of arguments:', len(sys.argv), 'arguments.')
+    print('Argument List:', str(sys.argv))
+    exit()
+  
+  TWO_LAYERS = sys.argv[1] == 'True'
+  N_KERNELS_LAYER_1 = sys.argv[2]
+  N_KERNELS_LAYER_2 = sys.argv[3]
+  N_NODES_FULL_LAYER = sys.argv[4]
+  print('2LYR:%s L1:%d L2:%d FC1:%d' % (TWO_LAYERS, 
+                                        int(N_KERNELS_LAYER_1), 
+                                        int(N_KERNELS_LAYER_2), 
+                                        int(N_NODES_FULL_LAYER)))
   tf.app.run()
