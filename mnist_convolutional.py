@@ -45,11 +45,11 @@ TEST_SIZE = 10000  # Size of the test set.
 VALIDATION_SIZE = 5000  # Size of the validation set.
 SEED = None  # Set to None for random seed.
 BATCH_SIZE = 1024
-NUM_EPOCHS = 10
+NUM_EPOCHS = 2
 EVAL_BATCH_SIZE = BATCH_SIZE
 EVAL_FREQUENCY = 100  # Number of steps between evaluations.
 
-TWO_LAYERS = True # If true two conv layers are used, else one
+TWO_LAYERS = False # If true two conv layers are used, else one
 N_KERNELS_LAYER_1 = 32
 N_KERNELS_LAYER_2 = 64
 N_NODES_FULL_LAYER = 512
@@ -314,9 +314,15 @@ def main(argv=None):  # pylint: disable=unused-argument
   with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
     merged = tf.merge_all_summaries()
     # Save summary of each separate run in a different dir indicated by datetime 
-    datetime = time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
-    summary_path = TENSORBOARD_DIRECTORY + '/' + datetime
-    summary_writer = tf.train.SummaryWriter(summary_path, sess.graph)
+    def gen_summary_path():
+      datetime = time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
+      summary_path = TENSORBOARD_DIRECTORY + '/' + datetime
+      summary_path += ' L1:%d' % N_KERNELS_LAYER_1
+      if TWO_LAYERS:
+        summary_path += ' L2:%d' % N_KERNELS_LAYER_2
+      summary_path += ' FC:%d' % N_NODES_FULL_LAYER
+      return summary_path
+    summary_writer = tf.train.SummaryWriter(gen_summary_path(), sess.graph)
 
     # Run all the initializers to prepare the trainable parameters.
     tf.initialize_all_variables().run()
