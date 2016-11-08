@@ -36,6 +36,7 @@ import tensorflow as tf
 SOURCE_URL = 'http://yann.lecun.com/exdb/mnist/'
 WORK_DIRECTORY = '/tmp/mnist/data'
 TENSORBOARD_DIRECTORY = '/tmp/mnist/tensorboard'
+CHECKPOINT_DIR = '/tmp/mnist/ckpts/'
 IMAGE_SIZE = 28
 NUM_CHANNELS = 1
 PIXEL_DEPTH = 255
@@ -54,6 +55,7 @@ TWO_LAYERS = None             # If true two conv layers are used, else one
 N_KERNELS_LAYER_1 = None
 N_KERNELS_LAYER_2 = None
 N_NODES_FULL_LAYER = None
+SESSION_NAME = None
 
 tf.app.flags.DEFINE_boolean("self_test", False, "True if running a self test.")
 tf.app.flags.DEFINE_boolean('use_fp16', False,
@@ -292,9 +294,11 @@ def main(argv=None):  # pylint: disable=unused-argument
   validation_error_variable = tf.Variable(100.0)
   validation_error_summary = tf.scalar_summary('Validation Error Rate', 
                                                 validation_error_variable)
-
   test_error_variable = tf.Variable(100.0)
   test_error_summary = tf.scalar_summary('Test Error Rate', test_error_variable)
+
+  # Add ops to save and restore all the variables.
+  saver = tf.train.Saver()
 
   # Small utility function to evaluate a dataset by feeding batches of data to
   # {eval_data} and pulling the results from {eval_predictions}.
@@ -394,6 +398,12 @@ def main(argv=None):  # pylint: disable=unused-argument
 
     summary_writer.close()
 
+    # Save the variables to disk.
+    save_path = CHECKPOINT_DIR + SESSION_NAME + '_STEPS:' + str(n_steps) + '.ckpts'
+    save_path = saver.save(sess, save_path)
+    print("Model saved in file: %s" % save_path)
+
+
 
 if __name__ == '__main__':
   if len(sys.argv) is not 5:
@@ -406,8 +416,17 @@ if __name__ == '__main__':
   N_KERNELS_LAYER_1 = int(sys.argv[2])
   N_KERNELS_LAYER_2 = int(sys.argv[3])
   N_NODES_FULL_LAYER = int(sys.argv[4])
-  print('2LYR:%s L1:%d L2:%d FC1:%d' % (TWO_LAYERS, 
-                                        N_KERNELS_LAYER_1, 
-                                        N_KERNELS_LAYER_2, 
-                                        N_NODES_FULL_LAYER))
+  
+  def gen_sess_name():
+    date_time = time.strftime("%a-%d-%b-%Y-%H:%M:%S", time.gmtime())
+    
+    model_layout += 'L1:%d' % N_KERNELS_LAYER_1
+    if TWO_LAYERS:
+      model_layout += '-L2:%d' % N_KERNELS_LAYER_2
+    model_layout += '-FC:%d' % N_NODES_FULL_LAYER
+
+    return date_time + "_" + model_layout
+
+  SESSION_NAME = gen_sess_name()
+  print('Started session: %s' % SESSION_NAME)
   tf.app.run()
