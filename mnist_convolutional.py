@@ -33,6 +33,16 @@ from six.moves import urllib
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
+import matplotlib as mp
+import matplotlib.pyplot as plt
+
+import numpy as np
+from sklearn.decomposition import PCA
+
+from PIL import Image
+from numpy import linalg as LA
+import pylab as pl
+
 SOURCE_URL = 'http://yann.lecun.com/exdb/mnist/'
 WORK_DIRECTORY = '/tmp/mnist/data'
 TENSORBOARD_DIRECTORY = '/tmp/mnist/tensorboard'
@@ -46,9 +56,10 @@ TEST_SIZE = 10000             # Size of the test set.
 VALIDATION_SIZE = 5000        # Size of the validation set.
 SEED = None                   # Set to None for random seed.
 BATCH_SIZE = 64
-NUM_EPOCHS = 20
+NUM_EPOCHS = 3
 EVAL_BATCH_SIZE = BATCH_SIZE
-EVAL_FREQUENCY = 100          # Number of evaluations for an entire run.
+EVAL_FREQUENCY = 100        # Number of evaluations for an entire run.
+SAVE_FREQUENCY = 10
 
 # Are overwritten by main args
 TWO_LAYERS = None             # If true two conv layers are used, else one
@@ -62,6 +73,39 @@ tf.app.flags.DEFINE_boolean('use_fp16', False,
                             "Use half floats instead of full floats if True.")
 FLAGS = tf.app.flags.FLAGS
 
+def to_array_shaped (var_shaped_w, var_shaped_b):
+  rect_shaped = np.zeros([N_KERNELS_LAYER_1, (5*5)+1])
+  for kernel_i in xrange(N_KERNELS_LAYER_1):
+    for i in xrange(5):
+      for j in xrange(5):
+        rect_shaped[kernel_i, (i*5)+j] = var_shaped_w[i, j, 0, kernel_i]
+    rect_shaped[kernel_i, (5*5)] = var_shaped_b[kernel_i]
+  return rect_shaped
+
+def to_var_shaped (rect_shaped):
+  var_shaped_w = np.zeros([5, 5, 1, N_KERNELS_LAYER_1])
+  var_shaped_b = np.zeros([N_KERNELS_LAYER_1])
+  for kernel_i in xrange(N_KERNELS_LAYER_1):
+    for i in xrange(5):
+      for j in xrange(5):
+        var_shaped_w[i, j, 0, kernel_i] = rect_shaped[kernel_i, i * 5 + j]
+    var_shaped_b[kernel_i] = rect_shaped[kernel_i, (5*5)]
+  return var_shaped_w, var_shaped_b
+
+def plot_errors(errors, cumsums, ckpt_id,  display=False, save=True):
+  name = '1st layer, n_filters: ' + str(N_KERNELS_LAYER_1) + " ckpt_id: " + ckpt_id
+  plt.figure()
+  plt.title(name)
+  plt.ylabel('test error %')
+  plt.xlabel('pca components')
+  plt.axis([-0.1, len(errors) - 0.9, -1, 100])
+  plt.grid(True)
+  plt.plot(errors, 'ro')
+  plt.plot(cumsums, 'rx')
+  if display:
+    plt.show()
+  if save:
+    plt.savefig(name + '.jpg')
 
 def data_type():
   """Return the type of the activations, weights, and placeholder variables."""
@@ -138,6 +182,8 @@ def main(argv=None):  # pylint: disable=unused-argument
     test_data, test_labels = fake_data(EVAL_BATCH_SIZE)
     num_epochs = 1
   else:
+    # --------- LOAD DATA INTO LISTS ---------
+
     # Get the data.
     train_data_filename = maybe_download('train-images-idx3-ubyte.gz')
     train_labels_filename = maybe_download('train-labels-idx1-ubyte.gz')
@@ -159,6 +205,8 @@ def main(argv=None):  # pylint: disable=unused-argument
 
   train_size = train_labels.shape[0]
 
+  # --------- CREATE INPUT PLACEHOLDERS ---------
+
   # This is where training samples and labels are fed to the graph.
   # These placeholder nodes will be fed a batch of training data at each
   # training step using the {feed_dict} argument to the Run() call below.
@@ -169,6 +217,8 @@ def main(argv=None):  # pylint: disable=unused-argument
   eval_data = tf.placeholder(
       data_type(),
       shape=(EVAL_BATCH_SIZE, IMAGE_SIZE, IMAGE_SIZE, NUM_CHANNELS))
+
+  # --------- CREATE MODEL VARIABLES ---------
 
   # The variables below hold all the trainable weights. They are passed an
   # initial value which will be assigned when we call:
@@ -208,6 +258,8 @@ def main(argv=None):  # pylint: disable=unused-argument
   fc2_biases = tf.Variable(tf.constant(
       0.1, shape=[NUM_LABELS], dtype=data_type()))
 
+  # --------- DEFINE MODEL ---------  
+
   # We will replicate the model structure for the training subgraph, as well
   # as the evaluation subgraphs, while sharing the trainable parameters.
   def model(data, train=False):
@@ -215,14 +267,12 @@ def main(argv=None):  # pylint: disable=unused-argument
     # 2D convolution, with 'SAME' padding (i.e. the output feature map has
     # the same size as the input). Note that {strides} is a 4D array whose
     # shape matches the data layout: [image index, y, x, depth].
+
     conv = tf.nn.conv2d(data,
                         conv1_weights,
                         strides=[1, 1, 1, 1],
                         padding='SAME')
-    # Bias and rectified linear non-linearity.
     relu = tf.nn.relu(tf.nn.bias_add(conv, conv1_biases))
-    # Max pooling. The kernel size spec {ksize} also follows the layout of
-    # the data. Here we have a pooling window of 2, and a stride of 2.
     pool = tf.nn.max_pool(relu,
                           ksize=[1, 2, 2, 1],
                           strides=[1, 2, 2, 1],
@@ -253,6 +303,8 @@ def main(argv=None):  # pylint: disable=unused-argument
       hidden = tf.nn.dropout(hidden, 0.5, seed=SEED)
     return tf.matmul(hidden, fc2_weights) + fc2_biases
 
+  # --------- TRAINING: LOSS ---------
+
   # Training computation: logits + cross-entropy loss.
   logits = model(train_data_node, True)
   loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -266,6 +318,8 @@ def main(argv=None):  # pylint: disable=unused-argument
 
   tf.scalar_summary('loss', loss)
 
+  # --------- TRAINING: LEARNING RATE ---------
+
   # Optimizer: set up a variable that's incremented once per batch and
   # controls the learning rate decay.
   batch = tf.Variable(0, dtype=data_type())
@@ -278,6 +332,8 @@ def main(argv=None):  # pylint: disable=unused-argument
       staircase=True)
 
   tf.scalar_summary('learning rate', learning_rate)
+
+  # --------- TRAINING: ADJUST WEIGHTS ---------
 
   # Use simple momentum for the optimization.
   optimizer = tf.train.MomentumOptimizer(learning_rate,
@@ -298,7 +354,7 @@ def main(argv=None):  # pylint: disable=unused-argument
   test_error_summary = tf.scalar_summary('Test Error Rate', test_error_variable)
 
   # Add ops to save and restore all the variables.
-  saver = tf.train.Saver()
+  saver = tf.train.Saver(max_to_keep=None)
 
   # Small utility function to evaluate a dataset by feeding batches of data to
   # {eval_data} and pulling the results from {eval_predictions}.
@@ -322,86 +378,136 @@ def main(argv=None):  # pylint: disable=unused-argument
         predictions[begin:, :] = batch_predictions[begin - size:, :]
     return predictions
 
-  # Create a local session to run the training.
-  start_time = time.time()
-  with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
-    merged = tf.merge_all_summaries()
-    
-    # Save summary of each separate run in a different dir indicated by datetime 
-    def gen_summary_path():
-      datetime = time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
-      summary_path = TENSORBOARD_DIRECTORY + '/' + datetime
-      summary_path += ' L1:%d' % N_KERNELS_LAYER_1
-      if TWO_LAYERS:
-        summary_path += ' L2:%d' % N_KERNELS_LAYER_2
-      summary_path += ' FC:%d' % N_NODES_FULL_LAYER
-      return summary_path
-    summary_writer = tf.train.SummaryWriter(gen_summary_path(), sess.graph)
 
-    # Run all the initializers to prepare the trainable parameters.
-    tf.initialize_all_variables().run()
-    print('Initialized!')
-    summary = sess.run(test_error_summary)
-    # Loop through training steps.
-    n_steps = int(num_epochs * train_size) // BATCH_SIZE
-    for step in xrange(n_steps):
-      # Compute the offset of the current minibatch in the data.
-      # Note that we could use better randomization across epochs.
-      offset = (step * BATCH_SIZE) % (train_size - BATCH_SIZE)
-      batch_data = train_data[offset:(offset + BATCH_SIZE), ...]
-      batch_labels = train_labels[offset:(offset + BATCH_SIZE)]
-      # This dictionary maps the batch data (as a numpy array) to the
-      # node in the graph it should be fed to.
-      feed_dict = {train_data_node: batch_data,
-                   train_labels_node: batch_labels}
-      # Run the graph and fetch some of the nodes.
-      _, l, lr, predictions, summary = sess.run(
-          [optimizer, loss, learning_rate, train_prediction, merged],
-          feed_dict=feed_dict)
+  if False: # TRAIN
+    # Create a local session to run the training.
+    start_time = time.time()
+    with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
+      merged = tf.merge_all_summaries()
+      
+      # Save summary of each separate run in a different dir indicated by datetime 
+      def gen_summary_path():
+        datetime = time.strftime("%d %b %Y %H:%M:%S", time.gmtime())
+        summary_path = TENSORBOARD_DIRECTORY + '/' + datetime
+        summary_path += ' L1:%d' % N_KERNELS_LAYER_1
+        if TWO_LAYERS:
+          summary_path += ' L2:%d' % N_KERNELS_LAYER_2
+        summary_path += ' FC:%d' % N_NODES_FULL_LAYER
+        return summary_path
+      summary_writer = tf.train.SummaryWriter(gen_summary_path(), sess.graph)
 
-      if step % EVAL_FREQUENCY == 0 or step + 1 == n_steps:
-        summary_writer.add_summary(summary, step)
+      # Run all the initializers to prepare the trainable parameters.
+      tf.initialize_all_variables().run()
+      print('Initialized!')
+      summary = sess.run(test_error_summary)
+      # Loop through training steps.
+      n_steps = int(num_epochs * train_size) // BATCH_SIZE
+      save_frequency = n_steps // SAVE_FREQUENCY
+      for step in xrange(n_steps):
+        # Compute the offset of the current minibatch in the data.
+        # Note that we could use better randomization across epochs.
+        offset = (step * BATCH_SIZE) % (train_size - BATCH_SIZE)
+        batch_data = train_data[offset:(offset + BATCH_SIZE), ...]
+        batch_labels = train_labels[offset:(offset + BATCH_SIZE)]
+        # This dictionary maps the batch data (as a numpy array) to the
+        # node in the graph it should be fed to.
+        feed_dict = {train_data_node: batch_data,
+                     train_labels_node: batch_labels}
+        # Run the graph and fetch some of the nodes.
+        _, l, lr, predictions, summary = sess.run(
+            [optimizer, loss, learning_rate, train_prediction, merged],
+            feed_dict=feed_dict)
 
-        elapsed_time = time.time() - start_time
-        start_time = time.time()
-        print('Step %d (epoch %.2f), %.1f ms' %
-              (step, float(step) * BATCH_SIZE / train_size,
-               1000 * elapsed_time / EVAL_FREQUENCY))
-        print('Minibatch loss: %.3f, learning rate: %.6f' % (l, lr))
-        print('Minibatch error: %.2f%%' % error_rate(predictions, batch_labels))
-        # assign validation error rate to  its corresponding variable to add it
-        # to the summary
-        validation_error_rate = error_rate(eval_in_batches(validation_data, sess), 
-                                            validation_labels)
-        print('Validation error: %.2f%%' % validation_error_rate)
-        # elaborous way to store the validation summary
-        sess.run(validation_error_variable.assign(validation_error_rate))
-        validation_summary = sess.run(validation_error_summary)
-        summary_writer.add_summary(validation_summary, step)
+        if step % EVAL_FREQUENCY == 0 or step + 1 == n_steps:
+          summary_writer.add_summary(summary, step)
 
-        sys.stdout.flush()
+          elapsed_time = time.time() - start_time
+          start_time = time.time()
+          print('Step %d (epoch %.2f), %.1f ms' %
+                (step, float(step) * BATCH_SIZE / train_size,
+                 1000 * elapsed_time / EVAL_FREQUENCY))
+          print('Minibatch loss: %.3f, learning rate: %.6f' % (l, lr))
+          print('Minibatch error: %.2f%%' % error_rate(predictions, batch_labels))
+          # assign validation error rate to  its corresponding variable to add it
+          # to the summary
+          validation_error_rate = error_rate(eval_in_batches(validation_data, sess), 
+                                              validation_labels)
+          print('Validation error: %.2f%%' % validation_error_rate)
+          # elaborous way to store the validation summary
+          sess.run(validation_error_variable.assign(validation_error_rate))
+          validation_summary = sess.run(validation_error_summary)
+          summary_writer.add_summary(validation_summary, step)
 
-        summary_writer.add_summary(summary, step)
+          sys.stdout.flush()
 
-    test_error = error_rate(eval_in_batches(test_data, sess), test_labels)
-    # Finally print the result!
-    print('Test error: %.2f%%' % test_error)
-    # elaborous way to store the test summary
-    sess.run(test_error_variable.assign(test_error))
-    summary = sess.run(test_error_summary)
-    summary_writer.add_summary(summary, n_steps)
-    
-    if FLAGS.self_test:
-      print('test_error', test_error)
-      assert test_error == 0.0, 'expected 0.0 test_error, got %.2f' % (
-          test_error,)
+          summary_writer.add_summary(summary, step)
 
-    summary_writer.close()
+        if step % save_frequency == 0 or step + 1 == n_steps:
+          # Save the variables to disk.
+          save_path = saver.save(sess,  
+                            CHECKPOINT_DIR + SESSION_NAME, 
+                            global_step=step)
+          print("Model saved in file: %s" % save_path)
 
-    # Save the variables to disk.
-    save_path = CHECKPOINT_DIR + SESSION_NAME + '_STEPS:' + str(n_steps) + '.ckpts'
-    save_path = saver.save(sess, save_path)
-    print("Model saved in file: %s" % save_path)
+      test_error = error_rate(eval_in_batches(test_data, sess), test_labels)
+      # Finally print the result!
+      print('Test error: %.2f%%' % test_error)
+      # elaborous way to store the test summary
+      sess.run(test_error_variable.assign(test_error))
+      summary = sess.run(test_error_summary)
+      summary_writer.add_summary(summary, n_steps)
+      
+      if FLAGS.self_test:
+        print('test_error', test_error)
+        assert test_error == 0.0, 'expected 0.0 test_error, got %.2f' % (
+            test_error,)
+
+      summary_writer.close()
+
+  if True: # PCA
+    ckpts_ids = ['0',
+                '257',
+                '514',
+                '771',
+                '1028',
+                '1285',
+                '1542',
+                '1799',
+                '2056',
+                '2313',
+                '2570',
+                '2577']
+
+    for ckpt_id in ckpts_ids:
+      with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
+        load_path = saver.restore(sess, CHECKPOINT_DIR + '08-Nov-2016-23:45:22_L1:32-FC:32-'+ ckpt_id)
+        print('loaded ckpt: %s' % load_path)
+
+        w_original = conv1_weights.eval()
+        b_original = conv1_biases.eval()
+        errors = []
+        cumsums = []
+
+        for i in xrange(32):
+          pca = PCA(n_components=i+1)
+          data = to_array_shaped(w_original, b_original)
+          data = np.transpose(data)
+          final_data = pca.fit_transform(data)
+          new_data = pca.inverse_transform(final_data)
+
+          if i+1 == 32:
+            cumsums = np.cumsum(pca.explained_variance_ratio_) * 100
+
+          new_data = np.transpose(new_data)
+          w, b = to_var_shaped(new_data)
+          sess.run(conv1_weights.assign(w))
+          sess.run(conv1_biases.assign(b))
+
+          test_error = error_rate(eval_in_batches(test_data, sess), test_labels)
+          errors.append(test_error)
+          print('%d Test error: %.2f%%' % (i, test_error))
+        
+        plot_errors(errors, cumsums, ckpt_id)
 
 
 
@@ -416,11 +522,11 @@ if __name__ == '__main__':
   N_KERNELS_LAYER_1 = int(sys.argv[2])
   N_KERNELS_LAYER_2 = int(sys.argv[3])
   N_NODES_FULL_LAYER = int(sys.argv[4])
-  
+
   def gen_sess_name():
-    date_time = time.strftime("%a-%d-%b-%Y-%H:%M:%S", time.gmtime())
+    date_time = time.strftime("%d-%b-%Y-%H:%M:%S", time.gmtime())
     
-    model_layout += 'L1:%d' % N_KERNELS_LAYER_1
+    model_layout = 'L1:%d' % N_KERNELS_LAYER_1
     if TWO_LAYERS:
       model_layout += '-L2:%d' % N_KERNELS_LAYER_2
     model_layout += '-FC:%d' % N_NODES_FULL_LAYER
