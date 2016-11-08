@@ -295,7 +295,10 @@ def main(argv=None):  # pylint: disable=unused-argument
   start_time = time.time()
   with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
     merged = tf.merge_all_summaries()
-    summary_writer = tf.train.SummaryWriter(TENSORBOARD_DIRECTORY, sess.graph)
+    # Save summary of each separate run in a different dir indicated by datetime 
+    datetime = time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
+    summary_path = TENSORBOARD_DIRECTORY + '/' + datetime
+    summary_writer = tf.train.SummaryWriter(summary_path, sess.graph)
 
     # Run all the initializers to prepare the trainable parameters.
     tf.initialize_all_variables().run()
