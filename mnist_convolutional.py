@@ -44,8 +44,8 @@ TRAIN_SIZE = 60000            # Size of the training set.
 TEST_SIZE = 10000             # Size of the test set.
 VALIDATION_SIZE = 5000        # Size of the validation set.
 SEED = None                   # Set to None for random seed.
-BATCH_SIZE = 1024
-NUM_EPOCHS = 2
+BATCH_SIZE = 64
+NUM_EPOCHS = 20
 EVAL_BATCH_SIZE = BATCH_SIZE
 EVAL_FREQUENCY = 100          # Number of evaluations for an entire run.
 
@@ -403,11 +403,11 @@ if __name__ == '__main__':
     exit()
   
   TWO_LAYERS = sys.argv[1] == 'True'
-  N_KERNELS_LAYER_1 = sys.argv[2]
-  N_KERNELS_LAYER_2 = sys.argv[3]
-  N_NODES_FULL_LAYER = sys.argv[4]
+  N_KERNELS_LAYER_1 = int(sys.argv[2])
+  N_KERNELS_LAYER_2 = int(sys.argv[3])
+  N_NODES_FULL_LAYER = int(sys.argv[4])
   print('2LYR:%s L1:%d L2:%d FC1:%d' % (TWO_LAYERS, 
-                                        int(N_KERNELS_LAYER_1), 
-                                        int(N_KERNELS_LAYER_2), 
-                                        int(N_NODES_FULL_LAYER)))
+                                        N_KERNELS_LAYER_1, 
+                                        N_KERNELS_LAYER_2, 
+                                        N_NODES_FULL_LAYER))
   tf.app.run()
