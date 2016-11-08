@@ -44,12 +44,14 @@ TRAIN_SIZE = 60000  # Size of the training set.
 TEST_SIZE = 10000  # Size of the test set.
 VALIDATION_SIZE = 5000  # Size of the validation set.
 SEED = None  # Set to None for random seed.
-# BATCH_SIZE = 64
 BATCH_SIZE = 1024
 NUM_EPOCHS = 10
 EVAL_BATCH_SIZE = 64
 EVAL_FREQUENCY = 100  # Number of steps between evaluations.
 
+N_KERNELS_LAYER_1 = 32
+N_KERNELS_LAYER_2 = 64
+N_NODES_FULL_LAYER = 512
 
 tf.app.flags.DEFINE_boolean("self_test", False, "True if running a self test.")
 tf.app.flags.DEFINE_boolean('use_fp16', False,
@@ -168,21 +170,22 @@ def main(argv=None):  # pylint: disable=unused-argument
   # initial value which will be assigned when we call:
   # {tf.initialize_all_variables().run()}
   conv1_weights = tf.Variable(
-      tf.truncated_normal([5, 5, NUM_CHANNELS, 32],  # 5x5 filter, depth 32.
+      tf.truncated_normal([5, 5, NUM_CHANNELS, N_KERNELS_LAYER_1],  # 5x5 filter, depth N_KERNELS_LAYER_1.
                           stddev=0.1,
                           seed=SEED, dtype=data_type()))
-  conv1_biases = tf.Variable(tf.zeros([32], dtype=data_type()))
+  conv1_biases = tf.Variable(tf.zeros([N_KERNELS_LAYER_1], dtype=data_type()))
   conv2_weights = tf.Variable(tf.truncated_normal(
-      [5, 5, 32, 64], stddev=0.1,
+      [5, 5, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2], stddev=0.1,
       seed=SEED, dtype=data_type()))
-  conv2_biases = tf.Variable(tf.constant(0.1, shape=[64], dtype=data_type()))
-  fc1_weights = tf.Variable(  # fully connected, depth 512.
-      tf.truncated_normal([IMAGE_SIZE // 4 * IMAGE_SIZE // 4 * 64, 512],
+  conv2_biases = tf.Variable(tf.constant(0.1, shape=[N_KERNELS_LAYER_2], 
+                                        dtype=data_type()))
+  fc1_weights = tf.Variable(  # fully connected, depth N_NODES_FULL_LAYER.
+      tf.truncated_normal([IMAGE_SIZE // 4 * IMAGE_SIZE // 4 * N_KERNELS_LAYER_2, N_NODES_FULL_LAYER],
                           stddev=0.1,
                           seed=SEED,
                           dtype=data_type()))
-  fc1_biases = tf.Variable(tf.constant(0.1, shape=[512], dtype=data_type()))
-  fc2_weights = tf.Variable(tf.truncated_normal([512, NUM_LABELS],
+  fc1_biases = tf.Variable(tf.constant(0.1, shape=[N_NODES_FULL_LAYER], dtype=data_type()))
+  fc2_weights = tf.Variable(tf.truncated_normal([N_NODES_FULL_LAYER, NUM_LABELS],
                                                 stddev=0.1,
                                                 seed=SEED,
                                                 dtype=data_type()))
