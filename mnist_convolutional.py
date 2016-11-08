@@ -46,9 +46,10 @@ VALIDATION_SIZE = 5000  # Size of the validation set.
 SEED = None  # Set to None for random seed.
 BATCH_SIZE = 1024
 NUM_EPOCHS = 10
-EVAL_BATCH_SIZE = 64
+EVAL_BATCH_SIZE = BATCH_SIZE
 EVAL_FREQUENCY = 100  # Number of steps between evaluations.
 
+TWO_LAYERS = True # If true two conv layers are used, else one
 N_KERNELS_LAYER_1 = 32
 N_KERNELS_LAYER_2 = 64
 N_NODES_FULL_LAYER = 512
@@ -172,19 +173,31 @@ def main(argv=None):  # pylint: disable=unused-argument
   conv1_weights = tf.Variable(
       tf.truncated_normal([5, 5, NUM_CHANNELS, N_KERNELS_LAYER_1],  # 5x5 filter, depth N_KERNELS_LAYER_1.
                           stddev=0.1,
-                          seed=SEED, dtype=data_type()))
+                          seed=SEED, 
+                          dtype=data_type()))
   conv1_biases = tf.Variable(tf.zeros([N_KERNELS_LAYER_1], dtype=data_type()))
-  conv2_weights = tf.Variable(tf.truncated_normal(
-      [5, 5, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2], stddev=0.1,
-      seed=SEED, dtype=data_type()))
-  conv2_biases = tf.Variable(tf.constant(0.1, shape=[N_KERNELS_LAYER_2], 
-                                        dtype=data_type()))
+
+  if TWO_LAYERS:
+    conv2_weights = tf.Variable(
+        tf.truncated_normal([5, 5, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2], 
+                            stddev=0.1,
+                            seed=SEED, 
+                            dtype=data_type()))
+    conv2_biases = tf.Variable(tf.constant(0.1, 
+                                          shape=[N_KERNELS_LAYER_2], 
+                                          dtype=data_type()))
+
+  if not TWO_LAYERS:
+    fc_size = IMAGE_SIZE // 2 * IMAGE_SIZE // 2 * N_KERNELS_LAYER_1
+  else:
+    fc_size = IMAGE_SIZE // 4 * IMAGE_SIZE // 4 * N_KERNELS_LAYER_2
   fc1_weights = tf.Variable(  # fully connected, depth N_NODES_FULL_LAYER.
-      tf.truncated_normal([IMAGE_SIZE // 4 * IMAGE_SIZE // 4 * N_KERNELS_LAYER_2, N_NODES_FULL_LAYER],
+      tf.truncated_normal([fc_size, N_NODES_FULL_LAYER],
                           stddev=0.1,
                           seed=SEED,
                           dtype=data_type()))
   fc1_biases = tf.Variable(tf.constant(0.1, shape=[N_NODES_FULL_LAYER], dtype=data_type()))
+  
   fc2_weights = tf.Variable(tf.truncated_normal([N_NODES_FULL_LAYER, NUM_LABELS],
                                                 stddev=0.1,
                                                 seed=SEED,
@@ -211,15 +224,17 @@ def main(argv=None):  # pylint: disable=unused-argument
                           ksize=[1, 2, 2, 1],
                           strides=[1, 2, 2, 1],
                           padding='SAME')
-    conv = tf.nn.conv2d(pool,
-                        conv2_weights,
-                        strides=[1, 1, 1, 1],
-                        padding='SAME')
-    relu = tf.nn.relu(tf.nn.bias_add(conv, conv2_biases))
-    pool = tf.nn.max_pool(relu,
-                          ksize=[1, 2, 2, 1],
-                          strides=[1, 2, 2, 1],
+    if TWO_LAYERS:
+      conv = tf.nn.conv2d(pool,
+                          conv2_weights,
+                          strides=[1, 1, 1, 1],
                           padding='SAME')
+      relu = tf.nn.relu(tf.nn.bias_add(conv, conv2_biases))
+      pool = tf.nn.max_pool(relu,
+                            ksize=[1, 2, 2, 1],
+                            strides=[1, 2, 2, 1],
+                            padding='SAME')
+
     # Reshape the feature map cuboid into a 2D matrix to feed it to the
     # fully connected layers.
     pool_shape = pool.get_shape().as_list()
