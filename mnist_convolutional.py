@@ -35,6 +35,7 @@ import tensorflow as tf
 
 SOURCE_URL = 'http://yann.lecun.com/exdb/mnist/'
 WORK_DIRECTORY = '/tmp/mnist/data'
+TENSORBOARD_DIRECTORY = '/tmp/mnist/tensorboard'
 IMAGE_SIZE = 28
 NUM_CHANNELS = 1
 PIXEL_DEPTH = 255
@@ -242,6 +243,8 @@ def main(argv=None):  # pylint: disable=unused-argument
   # Add the regularization term to the loss.
   loss += 5e-4 * regularizers
 
+  tf.scalar_summary('loss', loss)
+
   # Optimizer: set up a variable that's incremented once per batch and
   # controls the learning rate decay.
   batch = tf.Variable(0, dtype=data_type())
@@ -252,6 +255,9 @@ def main(argv=None):  # pylint: disable=unused-argument
       train_size,          # Decay step.
       0.95,                # Decay rate.
       staircase=True)
+
+  tf.scalar_summary('learning rate', learning_rate)
+
   # Use simple momentum for the optimization.
   optimizer = tf.train.MomentumOptimizer(learning_rate,
                                          0.9).minimize(loss,
@@ -285,10 +291,12 @@ def main(argv=None):  # pylint: disable=unused-argument
         predictions[begin:, :] = batch_predictions[begin - size:, :]
     return predictions
 
-
   # Create a local session to run the training.
   start_time = time.time()
   with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
+    merged = tf.merge_all_summaries()
+    summary_writer = tf.train.SummaryWriter(TENSORBOARD_DIRECTORY, sess.graph)
+
     # Run all the initializers to prepare the trainable parameters.
     tf.initialize_all_variables().run()
     print('Initialized!')
@@ -304,9 +312,10 @@ def main(argv=None):  # pylint: disable=unused-argument
       feed_dict = {train_data_node: batch_data,
                    train_labels_node: batch_labels}
       # Run the graph and fetch some of the nodes.
-      _, l, lr, predictions = sess.run(
-          [optimizer, loss, learning_rate, train_prediction],
+      _, l, lr, predictions, summary = sess.run(
+          [optimizer, loss, learning_rate, train_prediction, merged],
           feed_dict=feed_dict)
+
       if step % EVAL_FREQUENCY == 0:
         elapsed_time = time.time() - start_time
         start_time = time.time()
@@ -318,6 +327,8 @@ def main(argv=None):  # pylint: disable=unused-argument
         print('Validation error: %.1f%%' % error_rate(
             eval_in_batches(validation_data, sess), validation_labels))
         sys.stdout.flush()
+
+        summary_writer.add_summary(summary, step)
     # Finally print the result!
     test_error = error_rate(eval_in_batches(test_data, sess), test_labels)
     print('Test error: %.1f%%' % test_error)
@@ -325,6 +336,8 @@ def main(argv=None):  # pylint: disable=unused-argument
       print('test_error', test_error)
       assert test_error == 0.0, 'expected 0.0 test_error, got %.2f' % (
           test_error,)
+
+    summary_writer.close()
 
 
 if __name__ == '__main__':
