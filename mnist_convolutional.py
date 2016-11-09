@@ -43,6 +43,8 @@ from PIL import Image
 from numpy import linalg as LA
 import pylab as pl
 
+import mnist_model as model
+
 SOURCE_URL = 'http://yann.lecun.com/exdb/mnist/'
 WORK_DIRECTORY = '/tmp/mnist/data'
 TENSORBOARD_DIRECTORY = '/tmp/mnist/tensorboard'
@@ -223,12 +225,18 @@ def main(argv=None):  # pylint: disable=unused-argument
   # The variables below hold all the trainable weights. They are passed an
   # initial value which will be assigned when we call:
   # {tf.initialize_all_variables().run()}
+  conv_weights = []
+  conv_biases = []
+
   conv1_weights = tf.Variable(
       tf.truncated_normal([5, 5, NUM_CHANNELS, N_KERNELS_LAYER_1],  # 5x5 filter, depth N_KERNELS_LAYER_1.
                           stddev=0.1,
                           seed=SEED, 
                           dtype=data_type()))
+  conv_weights.append(conv1_weights)
+  
   conv1_biases = tf.Variable(tf.zeros([N_KERNELS_LAYER_1], dtype=data_type()))
+  conv_biases.append(conv1_biases)
 
   if TWO_LAYERS:
     conv2_weights = tf.Variable(
@@ -236,9 +244,15 @@ def main(argv=None):  # pylint: disable=unused-argument
                             stddev=0.1,
                             seed=SEED, 
                             dtype=data_type()))
+    conv_weights.append(conv2_weights)
+
     conv2_biases = tf.Variable(tf.constant(0.1, 
                                           shape=[N_KERNELS_LAYER_2], 
                                           dtype=data_type()))
+    conv_biases.append(conv2_biases)
+
+  fc_weights = []
+  fc_biases = []
 
   if not TWO_LAYERS:
     fc_size = IMAGE_SIZE // 2 * IMAGE_SIZE // 2 * N_KERNELS_LAYER_1
@@ -249,64 +263,25 @@ def main(argv=None):  # pylint: disable=unused-argument
                           stddev=0.1,
                           seed=SEED,
                           dtype=data_type()))
+  fc_weights.append(fc1_weights)
+
   fc1_biases = tf.Variable(tf.constant(0.1, shape=[N_NODES_FULL_LAYER], dtype=data_type()))
-  
+  fc_biases.append(fc1_biases)
+
   fc2_weights = tf.Variable(tf.truncated_normal([N_NODES_FULL_LAYER, NUM_LABELS],
                                                 stddev=0.1,
                                                 seed=SEED,
                                                 dtype=data_type()))
+  fc_weights.append(fc2_weights)
+
   fc2_biases = tf.Variable(tf.constant(
       0.1, shape=[NUM_LABELS], dtype=data_type()))
-
-  # --------- DEFINE MODEL ---------  
-
-  # We will replicate the model structure for the training subgraph, as well
-  # as the evaluation subgraphs, while sharing the trainable parameters.
-  def model(data, train=False):
-    """The Model definition."""
-    # 2D convolution, with 'SAME' padding (i.e. the output feature map has
-    # the same size as the input). Note that {strides} is a 4D array whose
-    # shape matches the data layout: [image index, y, x, depth].
-
-    conv = tf.nn.conv2d(data,
-                        conv1_weights,
-                        strides=[1, 1, 1, 1],
-                        padding='SAME')
-    relu = tf.nn.relu(tf.nn.bias_add(conv, conv1_biases))
-    pool = tf.nn.max_pool(relu,
-                          ksize=[1, 2, 2, 1],
-                          strides=[1, 2, 2, 1],
-                          padding='SAME')
-    if TWO_LAYERS:
-      conv = tf.nn.conv2d(pool,
-                          conv2_weights,
-                          strides=[1, 1, 1, 1],
-                          padding='SAME')
-      relu = tf.nn.relu(tf.nn.bias_add(conv, conv2_biases))
-      pool = tf.nn.max_pool(relu,
-                            ksize=[1, 2, 2, 1],
-                            strides=[1, 2, 2, 1],
-                            padding='SAME')
-
-    # Reshape the feature map cuboid into a 2D matrix to feed it to the
-    # fully connected layers.
-    pool_shape = pool.get_shape().as_list()
-    reshape = tf.reshape(
-        pool,
-        [pool_shape[0], pool_shape[1] * pool_shape[2] * pool_shape[3]])
-    # Fully connected layer. Note that the '+' operation automatically
-    # broadcasts the biases.
-    hidden = tf.nn.relu(tf.matmul(reshape, fc1_weights) + fc1_biases)
-    # Add a 50% dropout during training only. Dropout also scales
-    # activations such that no rescaling is needed at evaluation time.
-    if train:
-      hidden = tf.nn.dropout(hidden, 0.5, seed=SEED)
-    return tf.matmul(hidden, fc2_weights) + fc2_biases
+  fc_biases.append(fc2_biases)
 
   # --------- TRAINING: LOSS ---------
 
   # Training computation: logits + cross-entropy loss.
-  logits = model(train_data_node, True)
+  logits = model.model(train_data_node, conv_weights, conv_biases, fc_weights, fc_biases, True)
   loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
       logits, train_labels_node))
 
@@ -344,7 +319,7 @@ def main(argv=None):  # pylint: disable=unused-argument
   train_prediction = tf.nn.softmax(logits)
 
   # Predictions for the test and validation, which we'll compute less often.
-  eval_prediction = tf.nn.softmax(model(eval_data))
+  eval_prediction = tf.nn.softmax(model.model(eval_data, conv_weights, conv_biases, fc_weights, fc_biases))
 
   # Variables used for summaries
   validation_error_variable = tf.Variable(100.0)
@@ -379,7 +354,7 @@ def main(argv=None):  # pylint: disable=unused-argument
     return predictions
 
 
-  if False: # TRAIN
+  if True: # TRAIN
     # Create a local session to run the training.
     start_time = time.time()
     with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
@@ -464,7 +439,7 @@ def main(argv=None):  # pylint: disable=unused-argument
 
       summary_writer.close()
 
-  if True: # PCA
+  if False: # PCA
     ckpts_ids = ['0',
                 '257',
                 '514',
