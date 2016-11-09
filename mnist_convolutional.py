@@ -220,74 +220,16 @@ def main(argv=None):  # pylint: disable=unused-argument
       data_type(),
       shape=(EVAL_BATCH_SIZE, IMAGE_SIZE, IMAGE_SIZE, NUM_CHANNELS))
 
-  # --------- CREATE MODEL VARIABLES ---------
-
-  # The variables below hold all the trainable weights. They are passed an
-  # initial value which will be assigned when we call:
-  # {tf.initialize_all_variables().run()}
-  conv_weights = []
-  conv_biases = []
-
-  conv1_weights = tf.Variable(
-      tf.truncated_normal([5, 5, NUM_CHANNELS, N_KERNELS_LAYER_1],  # 5x5 filter, depth N_KERNELS_LAYER_1.
-                          stddev=0.1,
-                          seed=SEED, 
-                          dtype=data_type()))
-  conv_weights.append(conv1_weights)
-  
-  conv1_biases = tf.Variable(tf.zeros([N_KERNELS_LAYER_1], dtype=data_type()))
-  conv_biases.append(conv1_biases)
-
-  if TWO_LAYERS:
-    conv2_weights = tf.Variable(
-        tf.truncated_normal([5, 5, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2], 
-                            stddev=0.1,
-                            seed=SEED, 
-                            dtype=data_type()))
-    conv_weights.append(conv2_weights)
-
-    conv2_biases = tf.Variable(tf.constant(0.1, 
-                                          shape=[N_KERNELS_LAYER_2], 
-                                          dtype=data_type()))
-    conv_biases.append(conv2_biases)
-
-  fc_weights = []
-  fc_biases = []
-
-  if not TWO_LAYERS:
-    fc_size = IMAGE_SIZE // 2 * IMAGE_SIZE // 2 * N_KERNELS_LAYER_1
-  else:
-    fc_size = IMAGE_SIZE // 4 * IMAGE_SIZE // 4 * N_KERNELS_LAYER_2
-  fc1_weights = tf.Variable(  # fully connected, depth N_NODES_FULL_LAYER.
-      tf.truncated_normal([fc_size, N_NODES_FULL_LAYER],
-                          stddev=0.1,
-                          seed=SEED,
-                          dtype=data_type()))
-  fc_weights.append(fc1_weights)
-
-  fc1_biases = tf.Variable(tf.constant(0.1, shape=[N_NODES_FULL_LAYER], dtype=data_type()))
-  fc_biases.append(fc1_biases)
-
-  fc2_weights = tf.Variable(tf.truncated_normal([N_NODES_FULL_LAYER, NUM_LABELS],
-                                                stddev=0.1,
-                                                seed=SEED,
-                                                dtype=data_type()))
-  fc_weights.append(fc2_weights)
-
-  fc2_biases = tf.Variable(tf.constant(
-      0.1, shape=[NUM_LABELS], dtype=data_type()))
-  fc_biases.append(fc2_biases)
-
   # --------- TRAINING: LOSS ---------
 
   # Training computation: logits + cross-entropy loss.
-  logits = model.model(train_data_node, conv_weights, conv_biases, fc_weights, fc_biases, True)
+  logits = model.model(train_data_node, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2, N_NODES_FULL_LAYER, NUM_LABELS, True)
   loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
       logits, train_labels_node))
 
-  # L2 regularization for the fully connected parameters.
-  regularizers = (tf.nn.l2_loss(fc1_weights) + tf.nn.l2_loss(fc1_biases) +
-                  tf.nn.l2_loss(fc2_weights) + tf.nn.l2_loss(fc2_biases))
+  tf.get_variable_scope().reuse_variables()
+  regularizers = (tf.nn.l2_loss(tf.get_variable('local1/weights')) + tf.nn.l2_loss(tf.get_variable('local1/biases')) +
+                  tf.nn.l2_loss(tf.get_variable('softmax_linear/weights')) + tf.nn.l2_loss(tf.get_variable('softmax_linear/biases')))
   # Add the regularization term to the loss.
   loss += 5e-4 * regularizers
 
@@ -319,7 +261,7 @@ def main(argv=None):  # pylint: disable=unused-argument
   train_prediction = tf.nn.softmax(logits)
 
   # Predictions for the test and validation, which we'll compute less often.
-  eval_prediction = tf.nn.softmax(model.model(eval_data, conv_weights, conv_biases, fc_weights, fc_biases))
+  eval_prediction = tf.nn.softmax(model.model(eval_data, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2, N_NODES_FULL_LAYER, NUM_LABELS))
 
   # Variables used for summaries
   validation_error_variable = tf.Variable(100.0)
