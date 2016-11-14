@@ -43,7 +43,7 @@ from PIL import Image
 from numpy import linalg as LA
 import pylab as pl
 
-import mnist_model as model
+import mnist as model
 
 SOURCE_URL = 'http://yann.lecun.com/exdb/mnist/'
 WORK_DIRECTORY = '/tmp/mnist/data'
