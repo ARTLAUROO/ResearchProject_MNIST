@@ -15,6 +15,10 @@ import tensorflow as tf
 SEED = None
 NUM_CHANNELS = 1 # TODO get from input/flags
 IMAGE_SIZE = 28 # TODO get from input/flags
+BATCH_SIZE = 64
+
+# Constants describing the training process.
+DECAY_STEP_SIZE = 60000 # TODO == TRAIN_SIZE
 
 # We will replicate the model structure for the training subgraph, as well
 # as the evaluation subgraphs, while sharing the trainable parameters.
@@ -115,3 +119,37 @@ def model(data, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2, N_NODES_FULL_LAYER, NUM_LA
     softmax_linear = tf.add(tf.matmul(local1, weights), biases, name=scope.name)
 
   return softmax_linear
+
+def loss(logits, labels):
+  loss = tf.reduce_mean(
+          tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels))
+
+  tf.get_variable_scope().reuse_variables()
+  regularizers = (tf.nn.l2_loss(tf.get_variable('local1/weights')) 
+                  + tf.nn.l2_loss(tf.get_variable('local1/biases')) 
+                  + tf.nn.l2_loss(tf.get_variable('softmax_linear/weights')) 
+                  + tf.nn.l2_loss(tf.get_variable('softmax_linear/biases')))
+  # Add the regularization term to the loss.
+  loss += 5e-4 * regularizers
+  tf.scalar_summary('loss', loss)
+  
+  return loss
+
+def train(loss, batch):
+  # Decay once per epoch, using an exponential schedule starting at 0.01.
+  learning_rate = tf.train.exponential_decay(
+      0.01,                       # Base learning rate.
+      batch * BATCH_SIZE,         # Current index into the dataset.
+      DECAY_STEP_SIZE,                 # Decay step.
+      0.95,                       # Decay rate.
+      staircase=True)
+
+  tf.scalar_summary('learning rate', learning_rate)
+
+  # --------- TRAINING: ADJUST WEIGHTS ---------
+
+  # Use simple momentum for the optimization.
+  train_op = tf.train.MomentumOptimizer(learning_rate,
+                                         0.9).minimize(loss,
+                                                       global_step=batch)
+  return train_op
