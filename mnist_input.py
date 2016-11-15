@@ -80,7 +80,7 @@ def data(train):
   if train:
     # Generate a validation set.
     validation_images = images[:mnist.VALIDATION_SIZE, ...]
-    validation_labels = images[:mnist.VALIDATION_SIZE]
+    validation_labels = labels[:mnist.VALIDATION_SIZE]
 
     train_images = images[mnist.VALIDATION_SIZE:, ...]
     train_labels = labels[mnist.VALIDATION_SIZE:]
