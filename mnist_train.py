@@ -54,28 +54,6 @@ tf.app.flags.DEFINE_boolean('use_fp16', False,
                             "Use half floats instead of full floats if True.")
 FLAGS = tf.app.flags.FLAGS
 
-def to_array_shaped (var_shaped_w, var_shaped_b):
-  rect_shaped = np.zeros([N_KERNELS_LAYER_1, (5*5)+1])
-  for kernel_i in xrange(N_KERNELS_LAYER_1):
-    for i in xrange(5):
-      for j in xrange(5):
-        rect_shaped[kernel_i, (i*5)+j] = var_shaped_w[i, j, 0, kernel_i]
-    rect_shaped[kernel_i, (5*5)] = var_shaped_b[kernel_i]
-  return rect_shaped
-
-def to_array_shaped_tf(w, b):
-  rect_shaped = tf.reshape(w, [N_KERNELS_LAYER_1, (5*5)+1])
-
-
-def to_var_shaped (rect_shaped):
-  var_shaped_w = np.zeros([5, 5, 1, N_KERNELS_LAYER_1])
-  var_shaped_b = np.zeros([N_KERNELS_LAYER_1])
-  for kernel_i in xrange(N_KERNELS_LAYER_1):
-    for i in xrange(5):
-      for j in xrange(5):
-        var_shaped_w[i, j, 0, kernel_i] = rect_shaped[kernel_i, i * 5 + j]
-    var_shaped_b[kernel_i] = rect_shaped[kernel_i, (5*5)]
-  return var_shaped_w, var_shaped_b
 
 def plot_errors(errors, cumsums, ckpt_id,  display=False, save=True):
   name = '1st layer, n_filters: ' + str(N_KERNELS_LAYER_1) + " ckpt_id: " + ckpt_id
