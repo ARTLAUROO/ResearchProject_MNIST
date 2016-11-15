@@ -12,10 +12,23 @@ from six.moves import urllib
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
-SEED = None
-NUM_CHANNELS = 1 # TODO get from input/flags
-IMAGE_SIZE = 28 # TODO get from input/flags
+SOURCE_URL = 'http://yann.lecun.com/exdb/mnist/'
+WORK_DIRECTORY = '/tmp/mnist/data'
+TENSORBOARD_DIRECTORY = '/tmp/mnist/tensorboard'
+CHECKPOINT_DIR = '/tmp/mnist/ckpts/'
+IMAGE_SIZE = 28
+NUM_CHANNELS = 1
+PIXEL_DEPTH = 255
+NUM_LABELS = 10
+TRAIN_SIZE = 60000            # Size of the training set.
+TEST_SIZE = 10000             # Size of the test set.
+VALIDATION_SIZE = 5000        # Size of the validation set.
+SEED = None                   # Set to None for random seed.
 BATCH_SIZE = 64
+NUM_EPOCHS = 10
+EVAL_BATCH_SIZE = BATCH_SIZE
+EVAL_FREQUENCY = 100        # Number of evaluations for an entire run.
+SAVE_FREQUENCY = 10
 
 # Constants describing the training process.
 DECAY_STEP_SIZE = 60000 # TODO == TRAIN_SIZE

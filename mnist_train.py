@@ -23,45 +23,23 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import gzip
-import os
 import sys
 import time
+import gzip
+import os
 
 import numpy
 from six.moves import urllib
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
-import matplotlib as mp
 import matplotlib.pyplot as plt
 
 import numpy as np
 from sklearn.decomposition import PCA
 
-from PIL import Image
-from numpy import linalg as LA
-import pylab as pl
-
-import mnist as model
-
-SOURCE_URL = 'http://yann.lecun.com/exdb/mnist/'
-WORK_DIRECTORY = '/tmp/mnist/data'
-TENSORBOARD_DIRECTORY = '/tmp/mnist/tensorboard'
-CHECKPOINT_DIR = '/tmp/mnist/ckpts/'
-IMAGE_SIZE = 28
-NUM_CHANNELS = 1
-PIXEL_DEPTH = 255
-NUM_LABELS = 10
-TRAIN_SIZE = 60000            # Size of the training set.
-TEST_SIZE = 10000             # Size of the test set.
-VALIDATION_SIZE = 5000        # Size of the validation set.
-SEED = None                   # Set to None for random seed.
-BATCH_SIZE = 64
-NUM_EPOCHS = 10
-EVAL_BATCH_SIZE = BATCH_SIZE
-EVAL_FREQUENCY = 100        # Number of evaluations for an entire run.
-SAVE_FREQUENCY = 10
+import mnist
+import mnist_input as input
 
 # Are overwritten by main args
 TWO_LAYERS = None             # If true two conv layers are used, else one
@@ -120,58 +98,6 @@ def data_type():
   else:
     return tf.float32
 
-
-def maybe_download(filename):
-  """Download the data from Yann's website, unless it's already here."""
-  if not tf.gfile.Exists(WORK_DIRECTORY):
-    tf.gfile.MakeDirs(WORK_DIRECTORY)
-  filepath = os.path.join(WORK_DIRECTORY, filename)
-  if not tf.gfile.Exists(filepath):
-    filepath, _ = urllib.request.urlretrieve(SOURCE_URL + filename, filepath)
-    with tf.gfile.GFile(filepath) as f:
-      size = f.Size()
-    print('Successfully downloaded', filename, size, 'bytes.')
-  return filepath
-
-
-def extract_data(filename, num_images):
-  """Extract the images into a 4D tensor [image index, y, x, channels].
-
-  Values are rescaled from [0, 255] down to [-0.5, 0.5].
-  """
-  print('Extracting', filename)
-  with gzip.open(filename) as bytestream:
-    bytestream.read(16)
-    buf = bytestream.read(IMAGE_SIZE * IMAGE_SIZE * num_images * NUM_CHANNELS)
-    data = numpy.frombuffer(buf, dtype=numpy.uint8).astype(numpy.float32)
-    data = (data - (PIXEL_DEPTH / 2.0)) / PIXEL_DEPTH
-    data = data.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE, NUM_CHANNELS)
-    return data
-
-
-def extract_labels(filename, num_images):
-  """Extract the labels into a vector of int64 label IDs."""
-  print('Extracting', filename)
-  with gzip.open(filename) as bytestream:
-    bytestream.read(8)
-    buf = bytestream.read(1 * num_images)
-    labels = numpy.frombuffer(buf, dtype=numpy.uint8).astype(numpy.int64)
-  return labels
-
-
-def fake_data(num_images):
-  """Generate a fake dataset that matches the dimensions of MNIST."""
-  data = numpy.ndarray(
-      shape=(num_images, IMAGE_SIZE, IMAGE_SIZE, NUM_CHANNELS),
-      dtype=numpy.float32)
-  labels = numpy.zeros(shape=(num_images,), dtype=numpy.int64)
-  for image in xrange(num_images):
-    label = image % 2
-    data[image, :, :, 0] = label - 0.5
-    labels[image] = label
-  return data, labels
-
-
 def error_rate(predictions, labels):
   """Return the error rate based on dense predictions and sparse labels."""
   return 100.0 - (
@@ -184,56 +110,41 @@ def train():
     global_step = tf.Variable(0, dtype=data_type(), trainable=False)
 
     # Get the data.
-    train_data_filename = maybe_download('train-images-idx3-ubyte.gz')
-    train_labels_filename = maybe_download('train-labels-idx1-ubyte.gz')
-    test_data_filename = maybe_download('t10k-images-idx3-ubyte.gz')
-    test_labels_filename = maybe_download('t10k-labels-idx1-ubyte.gz')
-
-    # Extract it into numpy arrays.
-    train_data = extract_data(train_data_filename, TRAIN_SIZE)
-    train_labels = extract_labels(train_labels_filename, TRAIN_SIZE)
-    test_data = extract_data(test_data_filename, TEST_SIZE)
-    test_labels = extract_labels(test_labels_filename, TEST_SIZE)
-
-    # Generate a validation set.
-    validation_data = train_data[:VALIDATION_SIZE, ...]
-    validation_labels = train_labels[:VALIDATION_SIZE]
-    train_data = train_data[VALIDATION_SIZE:, ...]
-    train_labels = train_labels[VALIDATION_SIZE:]
-    num_epochs = NUM_EPOCHS
+    train_data, train_labels, validation_data, validation_labels = input.data(True)
+    test_data, test_labels = input.data(False)
     train_size = train_labels.shape[0]
 
 
     train_data_node = tf.placeholder(
                       data_type(),
-                      shape=(BATCH_SIZE, IMAGE_SIZE, IMAGE_SIZE, NUM_CHANNELS))
-    train_labels_node = tf.placeholder(tf.int64, shape=(BATCH_SIZE,))
+                      shape=(mnist.BATCH_SIZE, mnist.IMAGE_SIZE, mnist.IMAGE_SIZE, mnist.NUM_CHANNELS))
+    train_labels_node = tf.placeholder(tf.int64, shape=(mnist.BATCH_SIZE,))
     
     eval_data = tf.placeholder(
                   data_type(),
-                  shape=(EVAL_BATCH_SIZE, IMAGE_SIZE, IMAGE_SIZE, NUM_CHANNELS))
+                  shape=(mnist.EVAL_BATCH_SIZE, mnist.IMAGE_SIZE, mnist.IMAGE_SIZE, mnist.NUM_CHANNELS))
 
-    logits = model.model(train_data_node, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2, N_NODES_FULL_LAYER, NUM_LABELS, True)
+    logits = mnist.model(train_data_node, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2, N_NODES_FULL_LAYER, mnist.NUM_LABELS, True)
 
-    loss = model.loss(logits, train_labels_node)
+    loss = mnist.loss(logits, train_labels_node)
 
-    train_op = model.train(loss, global_step)
+    train_op = mnist.train(loss, global_step)
 
     train_prediction = tf.nn.softmax(logits)
 
     # Predictions for the test and validation, which we'll compute less often.
-    eval_prediction = tf.nn.softmax(model.model(eval_data, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2, N_NODES_FULL_LAYER, NUM_LABELS))
+    eval_prediction = tf.nn.softmax(mnist.model(eval_data, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2, N_NODES_FULL_LAYER, mnist.NUM_LABELS))
 
     saver = tf.train.Saver(max_to_keep=None)
 
     def eval_in_batches(data, sess):
       """Get all predictions for a dataset by running it in small batches."""
       size = data.shape[0]
-      if size < EVAL_BATCH_SIZE:
+      if size < mnist.EVAL_BATCH_SIZE:
         raise ValueError("batch size for evals larger than dataset: %d" % size)
-      predictions = numpy.ndarray(shape=(size, NUM_LABELS), dtype=numpy.float32)
-      for begin in xrange(0, size, EVAL_BATCH_SIZE):
-        end = begin + EVAL_BATCH_SIZE
+      predictions = numpy.ndarray(shape=(size, mnist.NUM_LABELS), dtype=numpy.float32)
+      for begin in xrange(0, size, mnist.EVAL_BATCH_SIZE):
+        end = begin + mnist.EVAL_BATCH_SIZE
         if end <= size:
           predictions[begin:end, :] = sess.run(
             eval_prediction,
@@ -241,7 +152,7 @@ def train():
         else:
           batch_predictions = sess.run(
             eval_prediction,
-            feed_dict={eval_data: data[-EVAL_BATCH_SIZE:, ...]})
+            feed_dict={eval_data: data[-mnist.EVAL_BATCH_SIZE:, ...]})
           predictions[begin:, :] = batch_predictions[begin - size:, :]
       return predictions
 
@@ -250,13 +161,13 @@ def train():
 
       start_time = time.time()
 
-      n_steps = int(num_epochs * train_size) // BATCH_SIZE
+      n_steps = int(mnist.NUM_EPOCHS * train_size) // mnist.BATCH_SIZE
       for step in xrange(n_steps):
         # Compute the offset of the current minibatch in the data.
         # Note that we could use better randomization across epochs.
-        offset = (step * BATCH_SIZE) % (train_size - BATCH_SIZE)
-        batch_data = train_data[offset:(offset + BATCH_SIZE), ...]
-        batch_labels = train_labels[offset:(offset + BATCH_SIZE)]
+        offset = (step * mnist.BATCH_SIZE) % (train_size - mnist.BATCH_SIZE)
+        batch_data = train_data[offset:(offset + mnist.BATCH_SIZE), ...]
+        batch_labels = train_labels[offset:(offset + mnist.BATCH_SIZE)]
         # This dictionary maps the batch data (as a numpy array) to the
         # node in the graph it should be fed to.
         feed_dict = {train_data_node: batch_data,
@@ -266,12 +177,12 @@ def train():
                                     [train_op, loss, train_prediction],
                                     feed_dict=feed_dict)
 
-        if step % EVAL_FREQUENCY == 0:
+        if step % mnist.EVAL_FREQUENCY == 0:
           elapsed_time = time.time() - start_time
           start_time = time.time()
           print('Step %d (epoch %.2f), %.1f ms' %
-                (step, float(step) * BATCH_SIZE / train_size,
-                 1000 * elapsed_time / EVAL_FREQUENCY))
+                (step, float(step) * mnist.BATCH_SIZE / train_size,
+                 1000 * elapsed_time / mnist.EVAL_FREQUENCY))
           print('Minibatch error: %.2f%%' % error_rate(predictions, batch_labels))
 
 
@@ -285,9 +196,9 @@ def main(argv=None):  # pylint: disable=unused-argument
   train()
   if FLAGS.self_test:
     print('Running self-test.')
-    train_data, train_labels = fake_data(256)
-    validation_data, validation_labels = fake_data(EVAL_BATCH_SIZE)
-    test_data, test_labels = fake_data(EVAL_BATCH_SIZE)
+    train_data, train_labels = mnist.fake_data(256)
+    validation_data, validation_labels = mnist.fake_data(EVAL_BATCH_SIZE)
+    test_data, test_labels = mnist.fake_data(mnist.EVAL_BATCH_SIZE)
     num_epochs = 1
   else:
     # --------- LOAD DATA INTO LISTS ---------
