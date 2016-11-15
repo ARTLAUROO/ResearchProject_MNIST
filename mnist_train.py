@@ -126,6 +126,41 @@ def eval_in_batches(data, sess, eval_data, eval_prediction):
       predictions[begin:, :] = batch_predictions[begin - size:, :]
   return predictions
 
+
+def eval():
+  with tf.Graph().as_default():
+    test_data, test_labels = input.data(False)
+
+    eval_data = tf.placeholder(data_type(),
+                               shape=(mnist.BATCH_SIZE,
+                                      mnist.IMAGE_SIZE,
+                                      mnist.IMAGE_SIZE,
+                                      mnist.NUM_CHANNELS))
+
+    logits = mnist.model(eval_data,
+                         N_KERNELS_LAYER_1,
+                         N_KERNELS_LAYER_2,
+                         N_NODES_FULL_LAYER,
+                         mnist.NUM_LABELS,
+                         False)  # eval model
+
+    # Predictions for the test and validation, which we'll compute less often.
+    eval_prediction = tf.nn.softmax(logits)
+
+    saver = tf.train.Saver(max_to_keep=None)
+
+    with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
+      train_size = mnist.TRAIN_SIZE - mnist.VALIDATION_SIZE
+      n_steps = int(mnist.NUM_EPOCHS * train_size) // mnist.BATCH_SIZE
+      ckpt_path = mnist.CHECKPOINT_DIR + mnist.CHECKPOINT_FILENAME + '-' + str(n_steps)
+      saver.restore(sess, ckpt_path)
+
+      # Print test error
+      print(test_data.shape)
+      predictions = eval_in_batches(test_data, sess, eval_data, eval_prediction)
+      test_error = error_rate(predictions, test_labels)
+      print('Test error: %.1f%%' % test_error)
+
 def train():
    with tf.Graph().as_default():
     global_step = tf.Variable(0, dtype=data_type(), trainable=False)
@@ -200,10 +235,9 @@ def train():
           print('Validation error: %.1f%%' % validation_error)
 
       # Save variables
-      save_path = saver.save(sess,
-                             mnist.CHECKPOINT_DIR + mnist.CHECKPOINT_FILENAME,
-                             global_step=n_steps)
-      print('Saved checkpoint file: %s' % save_path)
+      ckpt_path = mnist.CHECKPOINT_DIR + mnist.CHECKPOINT_FILENAME
+      ckpt_path = saver.save(sess, ckpt_path, global_step=n_steps)
+      print('Saved checkpoint file: %s' % ckpt_path)
 
       # Print test error
       predictions = eval_in_batches(test_data, sess, eval_data, eval_prediction)
@@ -467,4 +501,5 @@ if __name__ == '__main__':
   SESSION_NAME = gen_sess_name()
   print('Started session: %s' % SESSION_NAME)
   # tf.app.run()
-  train()
+  # train()
+  eval()
