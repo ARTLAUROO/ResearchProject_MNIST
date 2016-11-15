@@ -148,7 +148,9 @@ def train():
       ckpt_path = saver.save(sess, ckpt_path, global_step=n_steps)
       print('Saved checkpoint file: %s' % ckpt_path)
 
-      mnist_eval.eval()
+      # Print test error
+      ckpt_path = ckpt_path + '-' + str(n_steps)
+      
 
 
 def main(argv=None):  # pylint: disable=unused-argument

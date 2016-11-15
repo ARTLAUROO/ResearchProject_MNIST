@@ -28,7 +28,7 @@ N_NODES_FULL_LAYER = None
 SESSION_NAME = None
 
 
-def eval():
+def eval(ckpt_path):
   with tf.Graph().as_default():
     test_data, test_labels = input.data(False)
 
@@ -52,8 +52,6 @@ def eval():
 
     with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
       train_size = mnist.TRAIN_SIZE - mnist.VALIDATION_SIZE
-      n_steps = int(mnist.NUM_EPOCHS * train_size) // mnist.BATCH_SIZE
-      ckpt_path = mnist.CHECKPOINT_DIR + mnist.CHECKPOINT_FILENAME + '-' + str(n_steps)
       saver.restore(sess, ckpt_path)
 
       # Print test error
@@ -76,4 +74,8 @@ if __name__ == '__main__':
   N_KERNELS_LAYER_2 = int(sys.argv[3])
   N_NODES_FULL_LAYER = int(sys.argv[4])
 
-  eval()
+  # use last ckpt file from training
+  n_steps = int(mnist.NUM_EPOCHS * train_size) // mnist.BATCH_SIZE
+  ckpt_path = mnist.CHECKPOINT_DIR + mnist.CHECKPOINT_FILENAME + '-' + str(
+    n_steps)
+  eval(ckpt_path)
