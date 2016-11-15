@@ -16,6 +16,7 @@ SOURCE_URL = 'http://yann.lecun.com/exdb/mnist/'
 WORK_DIRECTORY = '/tmp/mnist/data'
 TENSORBOARD_DIRECTORY = '/tmp/mnist/tensorboard'
 CHECKPOINT_DIR = '/tmp/mnist/ckpts/'
+CHECKPOINT_FILENAME = 'mnist.ckpt'
 IMAGE_SIZE = 28
 NUM_CHANNELS = 1
 PIXEL_DEPTH = 255
@@ -26,7 +27,6 @@ VALIDATION_SIZE = 5000        # Size of the validation set.
 SEED = None                   # Set to None for random seed.
 BATCH_SIZE = 64
 NUM_EPOCHS = 10
-EVAL_BATCH_SIZE = BATCH_SIZE
 EVAL_FREQUENCY = 100        # Number of evaluations for an entire run.
 SAVE_FREQUENCY = 10
 
