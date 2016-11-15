@@ -43,7 +43,6 @@ import mnist_input as input
 import mnist_eval
 
 # Are overwritten by main args
-TWO_LAYERS = None             # If true two conv layers are used, else one
 N_KERNELS_LAYER_1 = None
 N_KERNELS_LAYER_2 = None
 N_NODES_FULL_LAYER = None
@@ -71,8 +70,30 @@ def plot_errors(errors, cumsums, ckpt_id,  display=False, save=True):
     plt.savefig(name + '.jpg')
 
 
+def generate_train_dir(conv_sizes, local_sizes):
+  dir_name = time.strftime("%d-%b-%Y_%H-%M-%S_", time.gmtime())
+
+  # add kernel layer data
+  dir_name += 'K'
+  for size in conv_sizes:
+    str = '-%d' % size
+    dir_name += str
+
+  # add local layer data
+  dir_name += '-L'
+  for size in local_sizes:
+    str = '-%d' % size
+    dir_name += str
+
+  dir_path = mnist.CHECKPOINT_DIR + dir_name
+  if not tf.gfile.Exists(dir_path):
+    tf.gfile.MakeDirs(dir_path)
+
+  return dir_path
+
+
 def train():
-   with tf.Graph().as_default():
+  with tf.Graph().as_default():
     global_step = tf.Variable(0, dtype=mnist.data_type(), trainable=False)
 
     # Get the data.
@@ -86,7 +107,7 @@ def train():
                                             mnist.IMAGE_SIZE,
                                             mnist.NUM_CHANNELS))
     train_labels_node = tf.placeholder(tf.int64, shape=(mnist.BATCH_SIZE,))
-    
+
     eval_data = tf.placeholder(mnist.data_type(),
                                shape=(mnist.BATCH_SIZE,
                                       mnist.IMAGE_SIZE,
@@ -94,11 +115,11 @@ def train():
                                       mnist.NUM_CHANNELS))
 
     logits = mnist.model(train_data_node,
-                         N_KERNELS_LAYER_1,
-                         N_KERNELS_LAYER_2,
-                         N_NODES_FULL_LAYER,
-                         mnist.NUM_LABELS,
-                         True) # training model
+                           N_KERNELS_LAYER_1,
+                           N_KERNELS_LAYER_2,
+                           N_NODES_FULL_LAYER,
+                           mnist.NUM_LABELS,
+                           True)  # training model
 
     loss = mnist.loss(logits, train_labels_node)
 
@@ -111,9 +132,19 @@ def train():
                                                 N_KERNELS_LAYER_1,
                                                 N_KERNELS_LAYER_2,
                                                 N_NODES_FULL_LAYER,
-                                                mnist.NUM_LABELS))
+                                                mnist.NUM_LABELS,
+                                                False))
 
+    # Setup saver and related vars
     saver = tf.train.Saver(max_to_keep=None)
+    # create dir for ckpts
+    if N_KERNELS_LAYER_2 is None:
+      conv_sizes = [N_KERNELS_LAYER_1]
+    else:
+      conv_sizes = [N_KERNELS_LAYER_1, N_KERNELS_LAYER_2]
+    local_sizes = [N_NODES_FULL_LAYER]
+    train_dir = generate_train_dir(conv_sizes, local_sizes)
+    ckpt_path = train_dir + '/mnist.ckpt'
 
     with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
       tf.initialize_all_variables().run()
@@ -134,8 +165,8 @@ def train():
         _, l, predictions = sess.run([train_op, loss, train_prediction],
                                      feed_dict=feed_dict)
 
+        # Print validation error
         if step % mnist.EVAL_FREQUENCY == 0:
-          # Print validation error
           predictions = mnist.eval_in_batches(validation_data,
                                               sess,
                                               eval_data,
@@ -143,13 +174,17 @@ def train():
           validation_error = mnist.error_rate(predictions, validation_labels)
           print('Validation error: %.1f%%' % validation_error)
 
+        # Save variables
+        if step % (n_steps // mnist.SAVE_FREQUENCY) == 0:
+          saver.save(sess, ckpt_path, global_step=step)
+          print('Saved checkpoint file: %s' % ckpt_path)
+
       # Save variables
-      ckpt_path = mnist.CHECKPOINT_DIR + mnist.CHECKPOINT_FILENAME
-      ckpt_path = saver.save(sess, ckpt_path, global_step=n_steps)
+      saver.save(sess, ckpt_path, global_step=n_steps)
       print('Saved checkpoint file: %s' % ckpt_path)
 
       # Print test error
-      ckpt_path = ckpt_path + '-' + str(n_steps)
+      #TODO
 
 
 
@@ -385,28 +420,18 @@ def main(argv=None):  # pylint: disable=unused-argument
 
 
 if __name__ == '__main__':
-  if len(sys.argv) is not 5:
+  if len(sys.argv) is 4:
+    N_KERNELS_LAYER_1 = int(sys.argv[1])
+    N_KERNELS_LAYER_2 = int(sys.argv[2])
+    N_NODES_FULL_LAYER = int(sys.argv[3])
+  elif len(sys.argv) is 3:
+    N_KERNELS_LAYER_1 = int(sys.argv[1])
+    N_KERNELS_LAYER_2 = None
+    N_NODES_FULL_LAYER = int(sys.argv[2])
+  else:
     print('invalid number of arguments')
     print('Number of arguments:', len(sys.argv), 'arguments.')
     print('Argument List:', str(sys.argv))
     exit()
-  
-  TWO_LAYERS = sys.argv[1] == 'True'
-  N_KERNELS_LAYER_1 = int(sys.argv[2])
-  N_KERNELS_LAYER_2 = int(sys.argv[3])
-  N_NODES_FULL_LAYER = int(sys.argv[4])
 
-  def gen_sess_name():
-    date_time = time.strftime("%d-%b-%Y-%H:%M:%S", time.gmtime())
-    
-    model_layout = 'L1:%d' % N_KERNELS_LAYER_1
-    if TWO_LAYERS:
-      model_layout += '-L2:%d' % N_KERNELS_LAYER_2
-    model_layout += '-FC:%d' % N_NODES_FULL_LAYER
-
-    return date_time + "_" + model_layout
-
-  SESSION_NAME = gen_sess_name()
-  print('Started session: %s' % SESSION_NAME)
-  # tf.app.run()
   train()

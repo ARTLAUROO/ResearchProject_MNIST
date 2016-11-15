@@ -26,9 +26,9 @@ TEST_SIZE = 10000             # Size of the test set.
 VALIDATION_SIZE = 5000        # Size of the validation set.
 SEED = None                   # Set to None for random seed.
 BATCH_SIZE = 64
-NUM_EPOCHS = 10
+NUM_EPOCHS = 1
 EVAL_FREQUENCY = 100        # Number of evaluations for an entire run.
-SAVE_FREQUENCY = 10
+SAVE_FREQUENCY = 2
 USE_FP16 = False
 
 # Constants describing the training process.
@@ -52,7 +52,7 @@ def model(data, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2, N_NODES_FULL_LAYER, NUM_LA
   with tf.variable_scope('conv1') as scope:
     # add first conv layer
     initializer = tf.truncated_normal_initializer(stddev=0.1,
-                                                  seed=SEED, 
+                                                  seed=SEED,
                                                   dtype=tf.float32)
     kernel = tf.get_variable('weights',
                             [5, 5, NUM_CHANNELS, N_KERNELS_LAYER_1],
@@ -62,44 +62,44 @@ def model(data, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2, N_NODES_FULL_LAYER, NUM_LA
                         strides=[1, 1, 1, 1],
                         padding='SAME')
     initializer = tf.zeros_initializer([N_KERNELS_LAYER_1], dtype=tf.float32) # TODO use datatype()
-    biases = tf.get_variable('biases', initializer=initializer) 
+    biases = tf.get_variable('biases', initializer=initializer)
     bias = tf.nn.bias_add(conv, biases)
     relu = tf.nn.relu(bias, name=scope.name)
-  
+
   pool = tf.nn.max_pool(relu,
                         ksize=[1, 2, 2, 1],
                         strides=[1, 2, 2, 1],
                         padding='SAME',
                         name='pool1')
 
-  with tf.variable_scope('conv2') as scope:
-    initializer = tf.truncated_normal_initializer(stddev=0.1,
-                                                  seed=SEED, 
-                                                  dtype=tf.float32)  # TODO use datatype()
-    kernel = tf.get_variable('weights',
-                            [5, 5, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2],
-                            initializer=initializer)
-    conv = tf.nn.conv2d(pool,
-                        kernel,
-                        strides=[1, 1, 1, 1],
-                        padding='SAME')
-    initializer = tf.constant_initializer(0.1, dtype=tf.float32) # TODO use datatype()
-    biases = tf.get_variable('biases',
-                            shape=[N_KERNELS_LAYER_2],
-                            initializer=initializer) 
-    bias = tf.nn.bias_add(conv, biases)
-    relu = tf.nn.relu(bias, name=scope.name)
+  if N_KERNELS_LAYER_2 is not None:
+    with tf.variable_scope('conv2') as scope:
+      initializer = tf.truncated_normal_initializer(stddev=0.1,
+                                                    seed=SEED,
+                                                    dtype=tf.float32)  # TODO use datatype()
+      kernel = tf.get_variable('weights',
+                              [5, 5, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2],
+                              initializer=initializer)
+      conv = tf.nn.conv2d(pool,
+                          kernel,
+                          strides=[1, 1, 1, 1],
+                          padding='SAME')
+      initializer = tf.constant_initializer(0.1, dtype=tf.float32) # TODO use datatype()
+      biases = tf.get_variable('biases',
+                              shape=[N_KERNELS_LAYER_2],
+                              initializer=initializer)
+      bias = tf.nn.bias_add(conv, biases)
+      relu = tf.nn.relu(bias, name=scope.name)
 
-  pool = tf.nn.max_pool(relu,
-                        ksize=[1, 2, 2, 1],
-                        strides=[1, 2, 2, 1],
-                        padding='SAME',
-                        name='pool2')
+    pool = tf.nn.max_pool(relu,
+                          ksize=[1, 2, 2, 1],
+                          strides=[1, 2, 2, 1],
+                          padding='SAME',
+                          name='pool2')
 
-  if not True:
-    fc_size = IMAGE_SIZE // 2 * IMAGE_SIZE // 2 * N_KERNELS_LAYER_1
-  else:
     fc_size = IMAGE_SIZE // 4 * IMAGE_SIZE // 4 * N_KERNELS_LAYER_2
+  else:
+    fc_size = IMAGE_SIZE // 2 * IMAGE_SIZE // 2 * N_KERNELS_LAYER_1
 
   with tf.variable_scope('local1') as scope:
     # Reshape the feature map cuboid into a 2D matrix to feed it to the
@@ -113,13 +113,13 @@ def model(data, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2, N_NODES_FULL_LAYER, NUM_LA
     initializer = tf.truncated_normal_initializer(stddev=0.1,
                                                   seed=SEED,
                                                   dtype=tf.float32) # TODO use datatype()
-    weights = tf.get_variable('weights', 
-                              [fc_size, N_NODES_FULL_LAYER], 
-                              initializer=initializer) 
+    weights = tf.get_variable('weights',
+                              [fc_size, N_NODES_FULL_LAYER],
+                              initializer=initializer)
     initializer = tf.constant_initializer(0.1, dtype=tf.float32) # TODO use datatype()
     biases = tf.get_variable('biases',
                             shape=[N_NODES_FULL_LAYER],
-                            initializer=initializer) 
+                            initializer=initializer)
     local1 = tf.nn.relu(tf.matmul(reshape, weights) + biases, name=scope.name)
     # Add a 50% dropout during training only. Dropout also scales
     # activations such that no rescaling is needed at evaluation time.
@@ -130,12 +130,12 @@ def model(data, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2, N_NODES_FULL_LAYER, NUM_LA
     initializer = tf.truncated_normal_initializer(stddev=0.1,
                                                   seed=SEED,
                                                   dtype=tf.float32) # TODO use datatype()
-    weights = tf.get_variable('weights', 
+    weights = tf.get_variable('weights',
                               shape=[N_NODES_FULL_LAYER, NUM_LABELS],
                               initializer=initializer)
     initializer = tf.constant_initializer(0.1, dtype=tf.float32) # TODO use datatype()
     biases = tf.get_variable('biases',
-                              shape=[NUM_LABELS], 
+                              shape=[NUM_LABELS],
                               initializer=initializer)
     softmax_linear = tf.add(tf.matmul(local1, weights), biases, name=scope.name)
 
@@ -203,3 +203,48 @@ def error_rate(predictions, labels):
       100.0 *
       numpy.sum(numpy.argmax(predictions, 1) == labels) /
       predictions.shape[0])
+
+
+def generate_ckpt_name(conv_sizes, local_sizes):
+  ckpt_name = time.strftime("%d-%b-%Y_%H-%M-%S_", time.gmtime())
+
+  # add kernel layer data
+  ckpt_name += 'K'
+  for size in conv_sizes:
+    str = '-%d' % size
+    ckpt_name += str
+
+  # add local layer data
+  ckpt_name += '-L'
+  for size in local_sizes:
+    str = '-%d' % size
+    ckpt_name += str
+
+  return ckpt_name
+
+def ckpt_name_to_values(ckptname):
+  conv = []
+  local = []
+
+  # strip date and time
+  ckptname = ckptname.split(':')
+  ckptname = ckptname[-1]
+
+  # strip file extension
+  ckptname = ckptname.split('.')
+  ckptname = ckptname[0]
+
+  data = ckptname.split('_')
+  parsed_kernels = False
+  for d in data:
+    print('/' + d + '/')
+    if d == 'K':
+      pass
+    elif d == 'L':
+      parsed_kernels = True
+    elif not parsed_kernels:
+      conv.append(int(d))
+    else:
+      local.append(int(d))
+
+  return conv, local

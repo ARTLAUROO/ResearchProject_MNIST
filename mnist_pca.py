@@ -68,6 +68,8 @@ def to_var_shaped (array, height, width, channels, n):
 
 
 def pca_reduction(weights, biases, n_components):
+  _, _, _, n_kernels_layer_1 = weights.shape
+
   pca = PCA(n_components=n_components)
   array = to_array_shaped(weights, biases)
 
@@ -80,25 +82,64 @@ def pca_reduction(weights, biases, n_components):
   cumsum = np.cumsum(pca.explained_variance_ratio_) * 100
   print('Total of variance kept: %f.2 in %d components' % (cumsum[-1], n_components))
 
-  weights, biases = to_var_shaped(array, 5, 5, 1, N_KERNELS_LAYER_1)
+  weights, biases = to_var_shaped(array, 5, 5, 1, n_kernels_layer_1)
 
   return weights, biases
 
-def pca():
+
+def generate_pca_plots():
+  train_dirs =  [x[0] for x in os.walk(mnist.CHECKPOINT_DIR)]
+  train_dirs = train_dirs[1:] # skip base dir
+
+  for train_dir in train_dirs:
+    train_ckpts = os.listdir(train_dir)
+
+    settings = train_dir.split('_')
+    settings = settings[-1]
+    settings = settings.split('-')
+
+    # TODO hack
+    if len(settings) is 4: # single layer
+      convs = [int(settings[1])]
+    else:
+      convs = [int(settings[1]), int(settings[2])]
+    locals = [int(settings[-1])]
+
+    for train_ckpt in train_ckpts:
+      if 'meta' in train_ckpt or 'checkpoint' in train_ckpt:
+        continue
+      pca(train_dir + '/' + train_ckpt, convs, locals)
+
+
+
+def pca(ckpt_path, convs, locals):
+  print("PCA for ckpt file: %s" % ckpt_path)
+
   with tf.Graph().as_default():
+    test_data, test_labels = input.data(False)
+
     # Build up model in order to load/save variables and apply pca
     eval_data = tf.placeholder(mnist.data_type(),
                                shape=(mnist.BATCH_SIZE,
                                       mnist.IMAGE_SIZE,
                                       mnist.IMAGE_SIZE,
                                       mnist.NUM_CHANNELS))
+    N_KERNELS_LAYER_1 = convs[0]
+    if len(convs) == 1:
+      logits = mnist.model(eval_data,
+                           convs[0],
+                           None,
+                           locals[0],
+                           mnist.NUM_LABELS,
+                           False)  # eval model
+    else:
+      logits = mnist.model(eval_data,
+                           convs[0],
+                           convs[1],
+                           locals[0],
+                           mnist.NUM_LABELS,
+                           False)  # eval model
 
-    logits = mnist.model(eval_data,
-                         N_KERNELS_LAYER_1,
-                         N_KERNELS_LAYER_2,
-                         N_NODES_FULL_LAYER,
-                         mnist.NUM_LABELS,
-                         False)  # eval model
 
     # Predictions for the test and validation, which we'll compute less often.
     eval_prediction = tf.nn.softmax(logits)
@@ -106,12 +147,10 @@ def pca():
     saver = tf.train.Saver(max_to_keep=None)
 
     with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
-      train_size = mnist.TRAIN_SIZE - mnist.VALIDATION_SIZE
-      n_steps = int(mnist.NUM_EPOCHS * train_size) // mnist.BATCH_SIZE
-      ckpt_path = mnist.CHECKPOINT_DIR + mnist.CHECKPOINT_FILENAME + '-' + str(n_steps)
       saver.restore(sess, ckpt_path)
 
       # Print test error before pca
+      print("PCA:before")
       mnist_eval.eval(ckpt_path)
 
       # pca
@@ -121,29 +160,29 @@ def pca():
         variable_w = tf.get_variable('weights')
         variable_b = tf.get_variable('biases')
 
-        weights, biases = pca_reduction(variable_w.eval(), variable_b.eval(), 10)
+        original_w = variable_w.eval()
+        original_b = variable_b.eval()
 
-        sess.run(variable_w.assign(weights))
-        sess.run(variable_b.assign(biases))
+        for i in xrange(1):
+          weights, biases = pca_reduction(original_w, original_b, i+1)
 
-        # Save variables
-        ckpt_path = mnist.CHECKPOINT_DIR + 'pca.ckpt'
-        ckpt_path = saver.save(sess, ckpt_path)
-        print('Saved checkpoint file: %s' % ckpt_path)
+          sess.run(variable_w.assign(weights))
+          sess.run(variable_b.assign(biases))
 
-        # Print test error after pca
-        mnist_eval.eval(ckpt_path)
+          print("PCA:%d" % i)
+          test_error = mnist_eval.run(sess,
+                                      test_data,
+                                      test_labels,
+                                      eval_data,
+                                      eval_prediction)
+
+        # # Save variables
+        # ckpt_path = mnist.CHECKPOINT_DIR + 'pca.ckpt'
+        # ckpt_path = saver.save(sess, ckpt_path)
+        # print('Saved checkpoint file: %s' % ckpt_path)
+        #
+        # # Print test error after pca
+        # mnist_eval.eval(ckpt_path)
 
 if __name__ == '__main__':
-  if len(sys.argv) is not 5:
-    print('invalid number of arguments')
-    print('Number of arguments:', len(sys.argv), 'arguments.')
-    print('Argument List:', str(sys.argv))
-    exit()
-
-  TWO_LAYERS = sys.argv[1] == 'True'
-  N_KERNELS_LAYER_1 = int(sys.argv[2])
-  N_KERNELS_LAYER_2 = int(sys.argv[3])
-  N_NODES_FULL_LAYER = int(sys.argv[4])
-
-  pca()
+  generate_pca_plots()

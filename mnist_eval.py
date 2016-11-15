@@ -39,6 +39,22 @@ def eval(ckpt_path):
                                       mnist.NUM_CHANNELS))
 
     # TODO load settings from file name
+    settings = ckpt_path.split('/')
+    settings = settings[-2] # drop path prefix
+    settings = settings.split('_')
+    settings = settings[-1]  # drop filename prefix
+    settings = settings.split('-')
+
+    N_KERNELS_LAYER_1 = int(settings[1])
+    if len(settings) is 4:
+      N_KERNELS_LAYER_2 = None
+    elif len(settings) is 5:
+      N_KERNELS_LAYER_2 = int(settings[2])
+    else:
+      print(settings)
+      assert False
+    N_NODES_FULL_LAYER = int(settings[-1])
+
     logits = mnist.model(eval_data,
                          N_KERNELS_LAYER_1,
                          N_KERNELS_LAYER_2,
@@ -54,14 +70,17 @@ def eval(ckpt_path):
     with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
       train_size = mnist.TRAIN_SIZE - mnist.VALIDATION_SIZE
       saver.restore(sess, ckpt_path)
-
       # Print test error
-      predictions = mnist.eval_in_batches(test_data,
-                                          sess,
-                                          eval_data,
-                                          eval_prediction)
-      test_error = mnist.error_rate(predictions, test_labels)
-      print('Test error: %.1f%%' % test_error)
+      run(sess, test_data, test_labels, eval_data, eval_prediction)
+
+def run(sess, test_data, test_labels, eval_data, eval_prediction):
+  predictions = mnist.eval_in_batches(test_data,
+                                      sess,
+                                      eval_data,
+                                      eval_prediction)
+  test_error = mnist.error_rate(predictions, test_labels)
+  print('Test error: %.2f%%' % test_error)
+  return test_error
 
 if __name__ == '__main__':
   if len(sys.argv) is not 5:
