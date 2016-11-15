@@ -29,9 +29,17 @@ BATCH_SIZE = 64
 NUM_EPOCHS = 10
 EVAL_FREQUENCY = 100        # Number of evaluations for an entire run.
 SAVE_FREQUENCY = 10
+USE_FP16 = False
 
 # Constants describing the training process.
 DECAY_STEP_SIZE = 60000 # TODO == TRAIN_SIZE
+
+def data_type():
+  """Return the type of the activations, weights, and placeholder variables."""
+  if USE_FP16:
+    return tf.float16
+  else:
+    return tf.float32
 
 # We will replicate the model structure for the training subgraph, as well
 # as the evaluation subgraphs, while sharing the trainable parameters.
@@ -166,3 +174,32 @@ def train(loss, batch):
                                          0.9).minimize(loss,
                                                        global_step=batch)
   return train_op
+
+
+def eval_in_batches(data, sess, eval_data, eval_prediction):
+  """Get all predictions for a dataset by running it in small batches."""
+  size = data.shape[0]
+  if size < BATCH_SIZE:
+    raise ValueError("batch size for evals larger than dataset: %d" % size)
+  predictions = numpy.ndarray(shape=(size, NUM_LABELS),
+                              dtype=numpy.float32)
+  for begin in xrange(0, size, BATCH_SIZE):
+    end = begin + BATCH_SIZE
+    if end <= size:
+      predictions[begin:end, :] = sess.run(
+        eval_prediction,
+        feed_dict={eval_data: data[begin:end, ...]})
+    else:
+      batch_predictions = sess.run(
+        eval_prediction,
+        feed_dict={eval_data: data[-BATCH_SIZE:, ...]})
+      predictions[begin:, :] = batch_predictions[begin - size:, :]
+  return predictions
+
+
+def error_rate(predictions, labels):
+  """Return the error rate based on dense predictions and sparse labels."""
+  return 100.0 - (
+      100.0 *
+      numpy.sum(numpy.argmax(predictions, 1) == labels) /
+      predictions.shape[0])

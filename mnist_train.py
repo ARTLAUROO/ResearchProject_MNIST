@@ -40,6 +40,7 @@ from sklearn.decomposition import PCA
 
 import mnist
 import mnist_input as input
+import mnist_eval
 
 # Are overwritten by main args
 TWO_LAYERS = None             # If true two conv layers are used, else one
@@ -91,94 +92,24 @@ def plot_errors(errors, cumsums, ckpt_id,  display=False, save=True):
   if save:
     plt.savefig(name + '.jpg')
 
-def data_type():
-  """Return the type of the activations, weights, and placeholder variables."""
-  if FLAGS.use_fp16:
-    return tf.float16
-  else:
-    return tf.float32
-
-def error_rate(predictions, labels):
-  """Return the error rate based on dense predictions and sparse labels."""
-  return 100.0 - (
-      100.0 *
-      numpy.sum(numpy.argmax(predictions, 1) == labels) /
-      predictions.shape[0])
-
-
-def eval_in_batches(data, sess, eval_data, eval_prediction):
-  """Get all predictions for a dataset by running it in small batches."""
-  size = data.shape[0]
-  if size < mnist.BATCH_SIZE:
-    raise ValueError("batch size for evals larger than dataset: %d" % size)
-  predictions = numpy.ndarray(shape=(size, mnist.NUM_LABELS),
-                              dtype=numpy.float32)
-  for begin in xrange(0, size, mnist.BATCH_SIZE):
-    end = begin + mnist.BATCH_SIZE
-    if end <= size:
-      predictions[begin:end, :] = sess.run(
-        eval_prediction,
-        feed_dict={eval_data: data[begin:end, ...]})
-    else:
-      batch_predictions = sess.run(
-        eval_prediction,
-        feed_dict={eval_data: data[-mnist.BATCH_SIZE:, ...]})
-      predictions[begin:, :] = batch_predictions[begin - size:, :]
-  return predictions
-
-
-def eval():
-  with tf.Graph().as_default():
-    test_data, test_labels = input.data(False)
-
-    eval_data = tf.placeholder(data_type(),
-                               shape=(mnist.BATCH_SIZE,
-                                      mnist.IMAGE_SIZE,
-                                      mnist.IMAGE_SIZE,
-                                      mnist.NUM_CHANNELS))
-
-    logits = mnist.model(eval_data,
-                         N_KERNELS_LAYER_1,
-                         N_KERNELS_LAYER_2,
-                         N_NODES_FULL_LAYER,
-                         mnist.NUM_LABELS,
-                         False)  # eval model
-
-    # Predictions for the test and validation, which we'll compute less often.
-    eval_prediction = tf.nn.softmax(logits)
-
-    saver = tf.train.Saver(max_to_keep=None)
-
-    with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
-      train_size = mnist.TRAIN_SIZE - mnist.VALIDATION_SIZE
-      n_steps = int(mnist.NUM_EPOCHS * train_size) // mnist.BATCH_SIZE
-      ckpt_path = mnist.CHECKPOINT_DIR + mnist.CHECKPOINT_FILENAME + '-' + str(n_steps)
-      saver.restore(sess, ckpt_path)
-
-      # Print test error
-      print(test_data.shape)
-      predictions = eval_in_batches(test_data, sess, eval_data, eval_prediction)
-      test_error = error_rate(predictions, test_labels)
-      print('Test error: %.1f%%' % test_error)
 
 def train():
    with tf.Graph().as_default():
-    global_step = tf.Variable(0, dtype=data_type(), trainable=False)
+    global_step = tf.Variable(0, dtype=mnist.data_type(), trainable=False)
 
     # Get the data.
     train_data, train_labels, validation_data, validation_labels = input.data(True)
-    test_data, test_labels = input.data(False)
     train_size = train_labels.shape[0]
 
 
-    train_data_node = tf.placeholder(data_type(),
+    train_data_node = tf.placeholder(mnist.data_type(),
                                      shape=(mnist.BATCH_SIZE,
                                             mnist.IMAGE_SIZE,
                                             mnist.IMAGE_SIZE,
                                             mnist.NUM_CHANNELS))
     train_labels_node = tf.placeholder(tf.int64, shape=(mnist.BATCH_SIZE,))
     
-    eval_data = tf.placeholder(data_type(),
+    eval_data = tf.placeholder(mnist.data_type(),
                                shape=(mnist.BATCH_SIZE,
                                       mnist.IMAGE_SIZE,
                                       mnist.IMAGE_SIZE,
@@ -227,11 +158,11 @@ def train():
 
         if step % mnist.EVAL_FREQUENCY == 0:
           # Print validation error
-          predictions = eval_in_batches(validation_data,
-                                        sess,
-                                        eval_data,
-                                        eval_prediction)
-          validation_error = error_rate(predictions, validation_labels)
+          predictions = mnist.eval_in_batches(validation_data,
+                                              sess,
+                                              eval_data,
+                                              eval_prediction)
+          validation_error = mnist.error_rate(predictions, validation_labels)
           print('Validation error: %.1f%%' % validation_error)
 
       # Save variables
@@ -239,10 +170,7 @@ def train():
       ckpt_path = saver.save(sess, ckpt_path, global_step=n_steps)
       print('Saved checkpoint file: %s' % ckpt_path)
 
-      # Print test error
-      predictions = eval_in_batches(test_data, sess, eval_data, eval_prediction)
-      test_error = error_rate(predictions, test_labels)
-      print('Test error: %.1f%%' % test_error)
+      mnist_eval.eval()
 
 
 def main(argv=None):  # pylint: disable=unused-argument
@@ -283,11 +211,11 @@ def main(argv=None):  # pylint: disable=unused-argument
   # These placeholder nodes will be fed a batch of training data at each
   # training step using the {feed_dict} argument to the Run() call below.
   train_data_node = tf.placeholder(
-      data_type(),
+      mnist.data_type(),
       shape=(BATCH_SIZE, IMAGE_SIZE, IMAGE_SIZE, NUM_CHANNELS))
   train_labels_node = tf.placeholder(tf.int64, shape=(BATCH_SIZE,))
   eval_data = tf.placeholder(
-      data_type(),
+      mnist.data_type(),
       shape=(EVAL_BATCH_SIZE, IMAGE_SIZE, IMAGE_SIZE, NUM_CHANNELS))
 
   # --------- TRAINING: LOSS ---------
@@ -301,7 +229,7 @@ def main(argv=None):  # pylint: disable=unused-argument
 
   # Optimizer: set up a variable that's incremented once per batch and
   # controls the learning rate decay.
-  global_step = tf.Variable(0, dtype=data_type(), trainable=False)
+  global_step = tf.Variable(0, dtype=mnist.data_type(), trainable=False)
   
   # Decay once per epoch, using an exponential schedule starting at 0.01.
   optimizer = model.train(loss, global_step)
@@ -501,5 +429,4 @@ if __name__ == '__main__':
   SESSION_NAME = gen_sess_name()
   print('Started session: %s' % SESSION_NAME)
   # tf.app.run()
-  # train()
-  eval()
+  train()
