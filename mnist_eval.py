@@ -21,10 +21,10 @@ import mnist
 import mnist_input as input
 
 # Are overwritten by main args
-TWO_LAYERS = None             # If true two conv layers are used, else one
-N_KERNELS_LAYER_1 = None
-N_KERNELS_LAYER_2 = None
-N_NODES_FULL_LAYER = None
+TWO_LAYERS = True             # If true two conv layers are used, else one
+N_KERNELS_LAYER_1 = 32
+N_KERNELS_LAYER_2 = 64
+N_NODES_FULL_LAYER = 512
 SESSION_NAME = None
 
 
@@ -38,6 +38,7 @@ def eval(ckpt_path):
                                       mnist.IMAGE_SIZE,
                                       mnist.NUM_CHANNELS))
 
+    # TODO load settings from file name
     logits = mnist.model(eval_data,
                          N_KERNELS_LAYER_1,
                          N_KERNELS_LAYER_2,

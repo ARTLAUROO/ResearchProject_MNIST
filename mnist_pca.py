@@ -19,6 +19,7 @@ from sklearn.decomposition import PCA
 
 import mnist
 import mnist_input as input
+import mnist_eval
 
 # Are overwritten by main args
 TWO_LAYERS = None             # If true two conv layers are used, else one
@@ -76,7 +77,8 @@ def pca_reduction(weights, biases, n_components):
   array = pca.inverse_transform(pca_data)
   array = np.transpose(array)
 
-  # cumsums = np.cumsum(pca.explained_variance_ratio_) * 100
+  cumsum = np.cumsum(pca.explained_variance_ratio_) * 100
+  print('Total of variance kept: %f.2 in %d components' % (cumsum[-1], n_components))
 
   weights, biases = to_var_shaped(array, 5, 5, 1, N_KERNELS_LAYER_1)
 
@@ -84,8 +86,7 @@ def pca_reduction(weights, biases, n_components):
 
 def pca():
   with tf.Graph().as_default():
-    test_data, test_labels = input.data(False)
-
+    # Build up model in order to load/save variables and apply pca
     eval_data = tf.placeholder(mnist.data_type(),
                                shape=(mnist.BATCH_SIZE,
                                       mnist.IMAGE_SIZE,
@@ -110,6 +111,9 @@ def pca():
       ckpt_path = mnist.CHECKPOINT_DIR + mnist.CHECKPOINT_FILENAME + '-' + str(n_steps)
       saver.restore(sess, ckpt_path)
 
+      # Print test error before pca
+      mnist_eval.eval(ckpt_path)
+
       # pca
       with tf.variable_scope('conv1') as scope:
         scope.reuse_variables()
@@ -117,10 +121,18 @@ def pca():
         variable_w = tf.get_variable('weights')
         variable_b = tf.get_variable('biases')
 
-        weights, biases = pca_reduction(variable_w.eval(), variable_b.eval(), 32)
+        weights, biases = pca_reduction(variable_w.eval(), variable_b.eval(), 10)
 
         sess.run(variable_w.assign(weights))
         sess.run(variable_b.assign(biases))
+
+        # Save variables
+        ckpt_path = mnist.CHECKPOINT_DIR + 'pca.ckpt'
+        ckpt_path = saver.save(sess, ckpt_path)
+        print('Saved checkpoint file: %s' % ckpt_path)
+
+        # Print test error after pca
+        mnist_eval.eval(ckpt_path)
 
 if __name__ == '__main__':
   if len(sys.argv) is not 5:

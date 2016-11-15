@@ -150,7 +150,7 @@ def train():
 
       # Print test error
       ckpt_path = ckpt_path + '-' + str(n_steps)
-      
+
 
 
 def main(argv=None):  # pylint: disable=unused-argument
