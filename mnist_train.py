@@ -105,6 +105,27 @@ def error_rate(predictions, labels):
       numpy.sum(numpy.argmax(predictions, 1) == labels) /
       predictions.shape[0])
 
+
+def eval_in_batches(data, sess, eval_data, eval_prediction):
+  """Get all predictions for a dataset by running it in small batches."""
+  size = data.shape[0]
+  if size < mnist.EVAL_BATCH_SIZE:
+    raise ValueError("batch size for evals larger than dataset: %d" % size)
+  predictions = numpy.ndarray(shape=(size, mnist.NUM_LABELS),
+                              dtype=numpy.float32)
+  for begin in xrange(0, size, mnist.EVAL_BATCH_SIZE):
+    end = begin + mnist.EVAL_BATCH_SIZE
+    if end <= size:
+      predictions[begin:end, :] = sess.run(
+        eval_prediction,
+        feed_dict={eval_data: data[begin:end, ...]})
+    else:
+      batch_predictions = sess.run(
+        eval_prediction,
+        feed_dict={eval_data: data[-mnist.EVAL_BATCH_SIZE:, ...]})
+      predictions[begin:, :] = batch_predictions[begin - size:, :]
+  return predictions
+
 def train():
    with tf.Graph().as_default():
     global_step = tf.Variable(0, dtype=data_type(), trainable=False)
@@ -136,25 +157,6 @@ def train():
     eval_prediction = tf.nn.softmax(mnist.model(eval_data, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2, N_NODES_FULL_LAYER, mnist.NUM_LABELS))
 
     saver = tf.train.Saver(max_to_keep=None)
-
-    def eval_in_batches(data, sess):
-      """Get all predictions for a dataset by running it in small batches."""
-      size = data.shape[0]
-      if size < mnist.EVAL_BATCH_SIZE:
-        raise ValueError("batch size for evals larger than dataset: %d" % size)
-      predictions = numpy.ndarray(shape=(size, mnist.NUM_LABELS), dtype=numpy.float32)
-      for begin in xrange(0, size, mnist.EVAL_BATCH_SIZE):
-        end = begin + mnist.EVAL_BATCH_SIZE
-        if end <= size:
-          predictions[begin:end, :] = sess.run(
-            eval_prediction,
-            feed_dict={eval_data: data[begin:end, ...]})
-        else:
-          batch_predictions = sess.run(
-            eval_prediction,
-            feed_dict={eval_data: data[-mnist.EVAL_BATCH_SIZE:, ...]})
-          predictions[begin:, :] = batch_predictions[begin - size:, :]
-      return predictions
 
     with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
       tf.initialize_all_variables().run()
@@ -188,7 +190,7 @@ def train():
 
 
       # Finally print the result!
-      test_error = error_rate(eval_in_batches(test_data, sess), test_labels)
+      test_error = error_rate(eval_in_batches(test_data, sess, eval_data, eval_prediction), test_labels)
       print('Test error: %.1f%%' % test_error)
 
 
