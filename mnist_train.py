@@ -109,12 +109,12 @@ def error_rate(predictions, labels):
 def eval_in_batches(data, sess, eval_data, eval_prediction):
   """Get all predictions for a dataset by running it in small batches."""
   size = data.shape[0]
-  if size < mnist.EVAL_BATCH_SIZE:
+  if size < mnist.BATCH_SIZE:
     raise ValueError("batch size for evals larger than dataset: %d" % size)
   predictions = numpy.ndarray(shape=(size, mnist.NUM_LABELS),
                               dtype=numpy.float32)
-  for begin in xrange(0, size, mnist.EVAL_BATCH_SIZE):
-    end = begin + mnist.EVAL_BATCH_SIZE
+  for begin in xrange(0, size, mnist.BATCH_SIZE):
+    end = begin + mnist.BATCH_SIZE
     if end <= size:
       predictions[begin:end, :] = sess.run(
         eval_prediction,
@@ -122,7 +122,7 @@ def eval_in_batches(data, sess, eval_data, eval_prediction):
     else:
       batch_predictions = sess.run(
         eval_prediction,
-        feed_dict={eval_data: data[-mnist.EVAL_BATCH_SIZE:, ...]})
+        feed_dict={eval_data: data[-mnist.BATCH_SIZE:, ...]})
       predictions[begin:, :] = batch_predictions[begin - size:, :]
   return predictions
 
@@ -143,7 +143,7 @@ def train():
     
     eval_data = tf.placeholder(
                   data_type(),
-                  shape=(mnist.EVAL_BATCH_SIZE, mnist.IMAGE_SIZE, mnist.IMAGE_SIZE, mnist.NUM_CHANNELS))
+                  shape=(mnist.BATCH_SIZE, mnist.IMAGE_SIZE, mnist.IMAGE_SIZE, mnist.NUM_CHANNELS))
 
     logits = mnist.model(train_data_node, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2, N_NODES_FULL_LAYER, mnist.NUM_LABELS, True)
 
@@ -175,22 +175,26 @@ def train():
         feed_dict = {train_data_node: batch_data,
                      train_labels_node: batch_labels}
         # Run the graph and fetch some of the nodes.
-        _, l, predictions = sess.run(
-                                    [train_op, loss, train_prediction],
-                                    feed_dict=feed_dict)
+        _, l, predictions = sess.run([train_op, loss, train_prediction],
+                                     feed_dict=feed_dict)
 
         if step % mnist.EVAL_FREQUENCY == 0:
-          elapsed_time = time.time() - start_time
-          start_time = time.time()
-          print('Step %d (epoch %.2f), %.1f ms' %
-                (step, float(step) * mnist.BATCH_SIZE / train_size,
-                 1000 * elapsed_time / mnist.EVAL_FREQUENCY))
-          print('Minibatch error: %.2f%%' % error_rate(predictions, batch_labels))
+          predictions = eval_in_batches(validation_data,
+                                        sess,
+                                        eval_data,
+                                        eval_prediction)
+          validation_error = error_rate(predictions, validation_labels)
+          print('Validation error: %.1f%%' % validation_error)
 
 
+      save_path = saver.save(sess,
+                             mnist.CHECKPOINT_DIR + mnist.CHECKPOINT_FILENAME,
+                             global_step=n_steps)
+      print('Saved checkpoint file: %s' % save_path)
 
       # Finally print the result!
-      test_error = error_rate(eval_in_batches(test_data, sess, eval_data, eval_prediction), test_labels)
+      predictions = eval_in_batches(test_data, sess, eval_data, eval_prediction)
+      test_error = error_rate(predictions, test_labels)
       print('Test error: %.1f%%' % test_error)
 
 
