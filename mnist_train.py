@@ -136,16 +136,25 @@ def train():
     train_size = train_labels.shape[0]
 
 
-    train_data_node = tf.placeholder(
-                      data_type(),
-                      shape=(mnist.BATCH_SIZE, mnist.IMAGE_SIZE, mnist.IMAGE_SIZE, mnist.NUM_CHANNELS))
+    train_data_node = tf.placeholder(data_type(),
+                                     shape=(mnist.BATCH_SIZE,
+                                            mnist.IMAGE_SIZE,
+                                            mnist.IMAGE_SIZE,
+                                            mnist.NUM_CHANNELS))
     train_labels_node = tf.placeholder(tf.int64, shape=(mnist.BATCH_SIZE,))
     
-    eval_data = tf.placeholder(
-                  data_type(),
-                  shape=(mnist.BATCH_SIZE, mnist.IMAGE_SIZE, mnist.IMAGE_SIZE, mnist.NUM_CHANNELS))
+    eval_data = tf.placeholder(data_type(),
+                               shape=(mnist.BATCH_SIZE,
+                                      mnist.IMAGE_SIZE,
+                                      mnist.IMAGE_SIZE,
+                                      mnist.NUM_CHANNELS))
 
-    logits = mnist.model(train_data_node, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2, N_NODES_FULL_LAYER, mnist.NUM_LABELS, True)
+    logits = mnist.model(train_data_node,
+                         N_KERNELS_LAYER_1,
+                         N_KERNELS_LAYER_2,
+                         N_NODES_FULL_LAYER,
+                         mnist.NUM_LABELS,
+                         True) # training model
 
     loss = mnist.loss(logits, train_labels_node)
 
@@ -154,14 +163,16 @@ def train():
     train_prediction = tf.nn.softmax(logits)
 
     # Predictions for the test and validation, which we'll compute less often.
-    eval_prediction = tf.nn.softmax(mnist.model(eval_data, N_KERNELS_LAYER_1, N_KERNELS_LAYER_2, N_NODES_FULL_LAYER, mnist.NUM_LABELS))
+    eval_prediction = tf.nn.softmax(mnist.model(eval_data,
+                                                N_KERNELS_LAYER_1,
+                                                N_KERNELS_LAYER_2,
+                                                N_NODES_FULL_LAYER,
+                                                mnist.NUM_LABELS))
 
     saver = tf.train.Saver(max_to_keep=None)
 
     with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
       tf.initialize_all_variables().run()
-
-      start_time = time.time()
 
       n_steps = int(mnist.NUM_EPOCHS * train_size) // mnist.BATCH_SIZE
       for step in xrange(n_steps):
@@ -174,11 +185,13 @@ def train():
         # node in the graph it should be fed to.
         feed_dict = {train_data_node: batch_data,
                      train_labels_node: batch_labels}
-        # Run the graph and fetch some of the nodes.
+
+        # train
         _, l, predictions = sess.run([train_op, loss, train_prediction],
                                      feed_dict=feed_dict)
 
         if step % mnist.EVAL_FREQUENCY == 0:
+          # Print validation error
           predictions = eval_in_batches(validation_data,
                                         sess,
                                         eval_data,
@@ -186,13 +199,13 @@ def train():
           validation_error = error_rate(predictions, validation_labels)
           print('Validation error: %.1f%%' % validation_error)
 
-
+      # Save variables
       save_path = saver.save(sess,
                              mnist.CHECKPOINT_DIR + mnist.CHECKPOINT_FILENAME,
                              global_step=n_steps)
       print('Saved checkpoint file: %s' % save_path)
 
-      # Finally print the result!
+      # Print test error
       predictions = eval_in_batches(test_data, sess, eval_data, eval_prediction)
       test_error = error_rate(predictions, test_labels)
       print('Test error: %.1f%%' % test_error)
