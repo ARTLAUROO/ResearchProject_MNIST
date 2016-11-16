@@ -26,9 +26,9 @@ TEST_SIZE = 10000             # Size of the test set.
 VALIDATION_SIZE = 5000        # Size of the validation set.
 SEED = None                   # Set to None for random seed.
 BATCH_SIZE = 64
-NUM_EPOCHS = 1
+NUM_EPOCHS = 10
 EVAL_FREQUENCY = 100        # Number of evaluations for an entire run.
-SAVE_FREQUENCY = 2
+SAVE_FREQUENCY = 10
 USE_FP16 = False
 
 # Constants describing the training process.

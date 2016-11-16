@@ -28,6 +28,30 @@ N_NODES_FULL_LAYER = 512
 SESSION_NAME = None
 
 
+def get_settings_from_name(name):
+    """Extracts settings of CNN from a properly formatted name.
+
+    Keyword arguments:
+    name -- Example: 15-Nov-2016_16-26-06_K-32-L-256, each number after the K
+            and L represent a layer of that size and type. K is for kernel in
+            a convolutional layer, L is for local in a dense layer.
+
+    Return:
+    Two lists, first filled with numbers representing conv layers, second filled
+    with numbers representing dense layers. From the example: [32] [256]
+    """
+
+    settings = name.split('_')
+    settings = settings[-1]  # drop date and time prefix
+    settings = settings.split('-')
+
+    l_idx = settings.index("L")
+    convl = [int(setting) for setting in settings[1:l_idx]] # omit K
+    dense = [int(setting) for setting in settings[l_idx+1:]] # omit L
+
+    return convl, dense
+
+
 def eval(ckpt_path):
   with tf.Graph().as_default():
     test_data, test_labels = input.data(False)
@@ -39,21 +63,15 @@ def eval(ckpt_path):
                                       mnist.NUM_CHANNELS))
 
     # TODO load settings from file name
-    settings = ckpt_path.split('/')
-    settings = settings[-2] # drop path prefix
-    settings = settings.split('_')
-    settings = settings[-1]  # drop filename prefix
-    settings = settings.split('-')
+    print(ckpt_path)
+    dir_name = ckpt_path.split('/')
+    print(dir_name)
+    dir_name = dir_name[-2] # drop path prefix
+    print(dir_name)
 
-    N_KERNELS_LAYER_1 = int(settings[1])
-    if len(settings) is 4:
-      N_KERNELS_LAYER_2 = None
-    elif len(settings) is 5:
-      N_KERNELS_LAYER_2 = int(settings[2])
-    else:
-      print(settings)
-      assert False
-    N_NODES_FULL_LAYER = int(settings[-1])
+    convl, dense = get_settings_from_name(dir_name)
+    print(convl)
+    print(dense)
 
     logits = mnist.model(eval_data,
                          N_KERNELS_LAYER_1,
@@ -83,19 +101,5 @@ def run(sess, test_data, test_labels, eval_data, eval_prediction):
   return test_error
 
 if __name__ == '__main__':
-  if len(sys.argv) is not 5:
-    print('invalid number of arguments')
-    print('Number of arguments:', len(sys.argv), 'arguments.')
-    print('Argument List:', str(sys.argv))
-    exit()
-
-  TWO_LAYERS = sys.argv[1] == 'True'
-  N_KERNELS_LAYER_1 = int(sys.argv[2])
-  N_KERNELS_LAYER_2 = int(sys.argv[3])
-  N_NODES_FULL_LAYER = int(sys.argv[4])
-
-  # use last ckpt file from training
-  n_steps = int(mnist.NUM_EPOCHS * train_size) // mnist.BATCH_SIZE
-  ckpt_path = mnist.CHECKPOINT_DIR + mnist.CHECKPOINT_FILENAME + '-' + str(
-    n_steps)
+  ckpt_path = '/tmp/mnist/ckpts/15-Nov-2016_16-21-13_K-32-64-L-4/mnist.ckpt-1718'
   eval(ckpt_path)
