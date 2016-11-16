@@ -2,17 +2,12 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import sys
-import time
-import gzip
+from six.moves import xrange  # pylint: disable=redefined-builtin
+
 import os
 
-import numpy
-from six.moves import urllib
-from six.moves import xrange  # pylint: disable=redefined-builtin
-import tensorflow as tf
-
 import matplotlib.pyplot as plt
+import tensorflow as tf
 
 import numpy as np
 from sklearn.decomposition import PCA
@@ -84,7 +79,7 @@ def pca_reduction(weights, biases, n_components):
 
   weights, biases = to_var_shaped(array, 5, 5, 1, n_kernels_layer_1)
 
-  return weights, biases
+  return weights, biases, cumsum[-1]
 
 
 def generate_pca_plots():
@@ -94,22 +89,95 @@ def generate_pca_plots():
   for train_dir in train_dirs:
     train_ckpts = os.listdir(train_dir)
 
-    settings = train_dir.split('_')
-    settings = settings[-1]
-    settings = settings.split('-')
-
-    # TODO hack
-    if len(settings) is 4: # single layer
-      convs = [int(settings[1])]
-    else:
-      convs = [int(settings[1]), int(settings[2])]
-    locals = [int(settings[-1])]
-
     for train_ckpt in train_ckpts:
       if 'meta' in train_ckpt or 'checkpoint' in train_ckpt:
         continue
-      pca(train_dir + '/' + train_ckpt, convs, locals)
+      generate_pca_plot(train_dir + '/' + train_ckpt)
 
+
+def generate_pca_plot(ckpt_path):
+  print('Generating plot for %s' % ckpt_path)
+  errors, cumsums = eval_pca(ckpt_path)
+
+  settings = ckpt_path.split('/')
+  file_name = settings[-1]
+  dir_name = settings[-2]
+
+  plt.figure()
+  plt.title(file_name)
+  plt.ylabel('test error %')
+  plt.xlabel('pca components')
+  plt.axis([-0.1, len(errors) - 0.9, -1, 100])
+  plt.grid(True)
+  plt.plot(errors, 'ro')
+  plt.plot(cumsums, 'rx')
+
+  # plt.show()
+  if not os.path.exists(mnist.PLOT_DIR + dir_name):
+      os.makedirs(mnist.PLOT_DIR + dir_name)
+  plt.savefig(mnist.PLOT_DIR  + dir_name + '/' + file_name + '.jpg')
+
+
+def eval_pca(ckpt_path):
+    errors = []
+    cumsums = []
+    pca_range = 2
+
+    with tf.Graph().as_default():
+
+      # Load settings from dir name
+      dir_name = ckpt_path.split('/')
+      dir_name = dir_name[-2]  # drop path prefix
+      convl_settings, dense_settings = mnist_eval.get_settings_from_name(dir_name)
+
+      # Construct model
+      data_batch = tf.placeholder(mnist.data_type(),
+                                  shape=(mnist.BATCH_SIZE,
+                                         mnist.IMAGE_SIZE,
+                                         mnist.IMAGE_SIZE,
+                                         mnist.NUM_CHANNELS))
+      logits = mnist.model(data_batch,
+                           convl_settings,
+                           dense_settings,
+                           mnist.NUM_LABELS,
+                           False)  # eval model
+
+      prediction = tf.nn.softmax(logits)
+
+      saver = tf.train.Saver()
+
+      with tf.Session() as sess:
+          saver.restore(sess, ckpt_path)
+
+          # apply PCA
+          with tf.variable_scope('conv1') as scope:
+              scope.reuse_variables()
+
+              variable_w = tf.get_variable('weights')
+              variable_b = tf.get_variable('biases')
+
+              original_w = variable_w.eval()
+              original_b = variable_b.eval()
+
+              data, labels = input.data(False)
+              for i in xrange(pca_range):
+                  n_components = i + 1
+                  weights, biases, cumsum = pca_reduction(original_w,
+                                                          original_b,
+                                                          n_components)
+                  sess.run(variable_w.assign(weights))
+                  sess.run(variable_b.assign(biases))
+                  cumsums.append(cumsum)
+
+                  print("PCA:%d" % i)
+                  predictions = mnist_eval.eval_in_batches(data,
+                                                           sess,
+                                                           data_batch,
+                                                           prediction)
+                  error = mnist.error_rate(predictions, labels)
+                  print('PCA %d error: %.2f%%' % (n_components, error))
+                  errors.append(error)
+    return errors, cumsums
 
 
 def pca(ckpt_path, convs, locals):
@@ -119,8 +187,8 @@ def pca(ckpt_path, convs, locals):
     test_data, test_labels = input.data(False)
 
     # Build up model in order to load/save variables and apply pca
-    eval_data = tf.placeholder(,
-                               shape=(mnist.BATCmnist.data_type()H_SIZE,
+    eval_data = tf.placeholder(1,
+                               shape=(mnist.BATCmnist.data_type(),
                                       mnist.IMAGE_SIZE,
                                       mnist.IMAGE_SIZE,
                                       mnist.NUM_CHANNELS))
@@ -185,4 +253,9 @@ def pca(ckpt_path, convs, locals):
         # mnist_eval.eval(ckpt_path)
 
 if __name__ == '__main__':
+    # Test
   generate_pca_plots()
+    # generate_pca_plot(
+    #     '/tmp/mnist/ckpts/15-Nov-2016_16-21-13_K-32-64-L-4/mnist.ckpt-1718')
+    # eval_pca(
+    #     '/tmp/mnist/ckpts/15-Nov-2016_16-26-06_K-32-L-256/mnist.ckpt-1718')

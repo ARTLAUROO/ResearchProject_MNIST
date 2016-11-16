@@ -17,6 +17,7 @@ WORK_DIRECTORY = '/tmp/mnist/data'
 TENSORBOARD_DIRECTORY = '/tmp/mnist/tensorboard'
 CHECKPOINT_DIR = '/tmp/mnist/ckpts/'
 CHECKPOINT_FILENAME = 'mnist.ckpt'
+PLOT_DIR = '/tmp/mnist/plots/'
 IMAGE_SIZE = 28
 NUM_CHANNELS = 1
 PIXEL_DEPTH = 255
