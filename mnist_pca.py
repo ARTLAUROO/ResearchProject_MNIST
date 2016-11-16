@@ -119,8 +119,8 @@ def pca(ckpt_path, convs, locals):
     test_data, test_labels = input.data(False)
 
     # Build up model in order to load/save variables and apply pca
-    eval_data = tf.placeholder(mnist.data_type(),
-                               shape=(mnist.BATCH_SIZE,
+    eval_data = tf.placeholder(,
+                               shape=(mnist.BATCmnist.data_type()H_SIZE,
                                       mnist.IMAGE_SIZE,
                                       mnist.IMAGE_SIZE,
                                       mnist.NUM_CHANNELS))
@@ -151,7 +151,7 @@ def pca(ckpt_path, convs, locals):
 
       # Print test error before pca
       print("PCA:before")
-      mnist_eval.eval(ckpt_path)
+      mnist_eval.eval_once(ckpt_path)
 
       # pca
       with tf.variable_scope('conv1') as scope:
