@@ -4,9 +4,12 @@ from __future__ import print_function
 
 from six.moves import xrange  # pylint: disable=redefined-builtin
 
+import sys
 import os
 
 import matplotlib.pyplot as plt
+from matplotlib.legend_handler import HandlerLine2D
+
 import tensorflow as tf
 
 import numpy as np
@@ -104,15 +107,19 @@ def generate_pca_plot(ckpt_path):
   dir_name = settings[-2]
 
   plt.figure()
-  plt.title(file_name)
-  plt.ylabel('test error %')
-  plt.xlabel('pca components')
-  plt.axis([-0.1, len(errors) - 0.9, -1, 100])
+  plt.ylabel('Percentage')
+  plt.xlabel('pca components kept')
+  plt.axis([-0.5, len(errors), -2, 102])
   plt.grid(True)
-  plt.plot(errors, 'ro')
-  plt.plot(cumsums, 'rx')
+  error_points, = plt.plot(errors, 'ro', label='Error on test set')
+  cumsum_points, = plt.plot(cumsums, 'bx', label='Kernel variance kept')
 
-  # plt.show()
+  plt.legend(bbox_to_anchor=(1, 0.8),
+             bbox_transform=plt.gcf().transFigure,
+             handler_map={error_points: HandlerLine2D(numpoints=1),
+                          cumsum_points: HandlerLine2D(numpoints=1)})
+
+  plt.show()
   if not os.path.exists(mnist.PLOT_DIR + dir_name):
       os.makedirs(mnist.PLOT_DIR + dir_name)
   plt.savefig(mnist.PLOT_DIR  + dir_name + '/' + file_name + '.jpg')
@@ -253,9 +260,8 @@ def pca(ckpt_path, convs, locals):
         # mnist_eval.eval(ckpt_path)
 
 if __name__ == '__main__':
-    # Test
-  generate_pca_plots()
-    # generate_pca_plot(
-    #     '/tmp/mnist/ckpts/15-Nov-2016_16-21-13_K-32-64-L-4/mnist.ckpt-1718')
-    # eval_pca(
-    #     '/tmp/mnist/ckpts/15-Nov-2016_16-26-06_K-32-L-256/mnist.ckpt-1718')
+  n_args = len(sys.argv)
+  if n_args is 2:
+    generate_pca_plot(sys.argv[1])
+  else:
+    generate_pca_plots()
