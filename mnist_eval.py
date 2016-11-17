@@ -2,6 +2,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import sys
+
 import numpy as np
 import tensorflow as tf
 
@@ -97,8 +99,4 @@ def eval_once(ckpt_path):
 
 
 if __name__ == '__main__':
-    # Test
-    # eval_once(
-    #     '/tmp/mnist/ckpts/15-Nov-2016_16-21-13_K-32-64-L-4/mnist.ckpt-1718')
-    eval_once(
-        '/tmp/mnist/ckpts/15-Nov-2016_16-26-06_K-32-L-256/mnist.ckpt-1718')
+    eval_once(sys.argv[1])

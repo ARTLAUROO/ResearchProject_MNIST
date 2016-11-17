@@ -101,6 +101,7 @@ def generate_pca_plots():
 def generate_pca_plot(ckpt_path):
   print('Generating plot for %s' % ckpt_path)
   errors, cumsums = eval_pca(ckpt_path)
+  return
 
   settings = ckpt_path.split('/')
   file_name = settings[-1]
