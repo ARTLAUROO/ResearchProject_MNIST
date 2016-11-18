@@ -13,11 +13,11 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
 SOURCE_URL = 'http://yann.lecun.com/exdb/mnist/'
-WORK_DIRECTORY = '/tmp/mnist/data'
-TENSORBOARD_DIRECTORY = '/tmp/mnist/tensorboard'
-CHECKPOINT_DIR = '/tmp/mnist/ckpts/'
+WORK_DIRECTORY = '/home/s1259008/research_project/tmp/mnist/data'
+TENSORBOARD_DIRECTORY = '/home/s1259008/research_project/tmp/mnist/tensorboard'
+CHECKPOINT_DIR = '/home/s1259008/research_project/tmp/mnist/ckpts/'
 CHECKPOINT_FILENAME = 'mnist.ckpt'
-PLOT_DIR = '/tmp/mnist/plots/'
+PLOT_DIR = '/home/s1259008/research_project/tmp/mnist/plots/'
 IMAGE_SIZE = 28
 NUM_CHANNELS = 1
 PIXEL_DEPTH = 255
@@ -27,7 +27,7 @@ TEST_SIZE = 10000             # Size of the test set.
 VALIDATION_SIZE = 5000        # Size of the validation set.
 SEED = None                   # Set to None for random seed.
 BATCH_SIZE = 64
-NUM_EPOCHS = 10
+NUM_EPOCHS = 30
 EVAL_FREQUENCY = 100        # Number of evaluations for an entire run.
 SAVE_FREQUENCY = 10
 USE_FP16 = False
@@ -64,7 +64,7 @@ def model(data, convl_sizes, dense_sizes, n_labels, train=False):
     # the same size as the input). Note that {strides} is a 4D array whose
     # shape matches the data layout: [image index, y, x, depth].
 
-    # add first convl layer
+    #add first convl layer
     with tf.variable_scope('conv1') as scope:
         initializer = tf.truncated_normal_initializer(stddev=0.1,
                                                       seed=SEED,

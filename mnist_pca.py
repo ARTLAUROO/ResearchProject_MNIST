@@ -101,35 +101,34 @@ def generate_pca_plots():
 def generate_pca_plot(ckpt_path):
   print('Generating plot for %s' % ckpt_path)
   errors, cumsums = eval_pca(ckpt_path)
-  return
 
   settings = ckpt_path.split('/')
-  file_name = settings[-1]
   dir_name = settings[-2]
+  file_name = settings[-1]
 
   plt.figure()
   plt.ylabel('Percentage')
-  plt.xlabel('pca components kept')
+  plt.xlabel('N PCA components')
   plt.axis([-0.5, len(errors), -2, 102])
   plt.grid(True)
   error_points, = plt.plot(errors, 'ro', label='Error on test set')
   cumsum_points, = plt.plot(cumsums, 'bx', label='Kernel variance kept')
 
-  plt.legend(bbox_to_anchor=(1, 0.8),
+  plt.legend(bbox_to_anchor=(0.9, 0.85),
              bbox_transform=plt.gcf().transFigure,
              handler_map={error_points: HandlerLine2D(numpoints=1),
                           cumsum_points: HandlerLine2D(numpoints=1)})
 
-  plt.show()
+  #plt.show()
   if not os.path.exists(mnist.PLOT_DIR + dir_name):
-      os.makedirs(mnist.PLOT_DIR + dir_name)
+    os.makedirs(mnist.PLOT_DIR + dir_name)
   plt.savefig(mnist.PLOT_DIR  + dir_name + '/' + file_name + '.jpg')
 
 
 def eval_pca(ckpt_path):
     errors = []
     cumsums = []
-    pca_range = 2
+    pca_range = 32
 
     with tf.Graph().as_default():
 
