@@ -103,6 +103,9 @@ def train(convl_settings, dense_settings):
     train_dir = generate_train_dir(convl_settings, dense_settings)
     ckpt_path = train_dir + '/mnist.ckpt'
 
+    # Setup summary writer for Tensorboard
+    merged = tf.merge_all_summaries()
+
     # Get the data.
     train_images, train_labels, validation_images, validation_labels = input.data(True)
     train_size = train_labels.shape[0]
@@ -110,6 +113,9 @@ def train(convl_settings, dense_settings):
     #  train
     with tf.Session() as sess:
       tf.initialize_all_variables().run()
+      summary_writer = tf.train.SummaryWriter(
+        mnist.TENSORBOARD_DIRECTORY + '/train',
+        sess.graph)
 
       n_steps = int(mnist.NUM_EPOCHS * train_size) // mnist.BATCH_SIZE
       for step in xrange(n_steps):
@@ -124,10 +130,10 @@ def train(convl_settings, dense_settings):
                      train_labels_input: batch_labels}
 
         # train
-        _, l, predictions = sess.run([train_op, loss, train_prediction],
+        _, l, predictions, summary = sess.run([train_op, loss, train_prediction, merged],
                                      feed_dict=feed_dict)
 
-        # Print validation error
+        # Print validation error and save summaries
         if step % mnist.EVAL_FREQUENCY == 0:
           predictions = mnist_eval.eval_in_batches(validation_images,
                                                    sess,
@@ -136,6 +142,8 @@ def train(convl_settings, dense_settings):
           validation_error = mnist.error_rate(predictions, validation_labels)
           print('Validation error: %.2f%% after %d/%d steps' %
                 (validation_error, step, n_steps))
+
+        summary_writer.add_summary(summary, step)
 
         # Save variables
         if step % (n_steps // mnist.SAVE_FREQUENCY) == 0 or step + 1 is n_steps:

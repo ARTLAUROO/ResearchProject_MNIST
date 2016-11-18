@@ -29,7 +29,7 @@ SEED = None                   # Set to None for random seed.
 BATCH_SIZE = 64
 NUM_EPOCHS = 30
 EVAL_FREQUENCY = 100        # Number of evaluations for an entire run.
-SAVE_FREQUENCY = 10
+SAVE_FREQUENCY = 1
 USE_FP16 = False
 
 # Constants describing the training process.
