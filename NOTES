@@ -1,0 +1,2 @@
+Login into gtx600 and port forwarrd for tensorboard
+ssh -X -L 16006:127.0.0.1:8888 gtx660
