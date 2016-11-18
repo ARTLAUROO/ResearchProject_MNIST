@@ -58,6 +58,21 @@ def generate_train_dir(conv_sizes, local_sizes):
   return dir_path
 
 
+def calc_total_params():
+  total_parameters = 0
+  for variable in tf.trainable_variables():
+    # shape is an array of tf.Dimension
+    shape = variable.get_shape()
+    print('v shape %s' % shape)
+    variable_parametes = 1
+    for dim in shape:
+      variable_parametes *= dim.value
+    print('v params %d' % variable_parametes)
+    total_parameters += variable_parametes
+  print('total params %d' % total_parameters)
+  return
+
+
 def train(convl_settings, dense_settings):
   print("Training model convl:" + str(convl_settings) + ' dense:' + str(dense_settings))
 
