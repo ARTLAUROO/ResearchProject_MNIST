@@ -7,15 +7,18 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 import numpy
 
-import mnist
+import model
+
+DATA_DIR = '/tmp/mnist/data/'
+MNIST_URL = 'http://yann.lecun.com/exdb/mnist/'
 
 def maybe_download(filename):
   """Download the data from Yann's website, unless it's already here."""
-  if not tf.gfile.Exists(mnist.WORK_DIRECTORY):
-    tf.gfile.MakeDirs(mnist.WORK_DIRECTORY)
-  filepath = os.path.join(mnist.WORK_DIRECTORY, filename)
+  if not tf.gfile.Exists(DATA_DIR):
+    tf.gfile.MakeDirs(DATA_DIR)
+  filepath = os.path.join(DATA_DIR, filename)
   if not tf.gfile.Exists(filepath):
-    filepath, _ = urllib.request.urlretrieve(mnist.SOURCE_URL + filename, filepath)
+    filepath, _ = urllib.request.urlretrieve(MNIST_URL + filename, filepath)
     with tf.gfile.GFile(filepath) as f:
       size = f.Size()
     print('Successfully downloaded', filename, size, 'bytes.')
@@ -30,10 +33,10 @@ def extract_data(filename, num_images):
   print('Extracting', filename)
   with gzip.open(filename) as bytestream:
     bytestream.read(16)
-    buf = bytestream.read(mnist.IMAGE_SIZE * mnist.IMAGE_SIZE * num_images * mnist.NUM_CHANNELS)
+    buf = bytestream.read(model.IMAGE_SIZE * model.IMAGE_SIZE * num_images * model.N_CHANNELS)
     data = numpy.frombuffer(buf, dtype=numpy.uint8).astype(numpy.float32)
-    data = (data - (mnist.PIXEL_DEPTH / 2.0)) / mnist.PIXEL_DEPTH
-    data = data.reshape(num_images, mnist.IMAGE_SIZE, mnist.IMAGE_SIZE, mnist.NUM_CHANNELS)
+    data = (data - (model.PIXEL_DEPTH / 2.0)) / model.PIXEL_DEPTH
+    data = data.reshape(num_images, model.IMAGE_SIZE, model.IMAGE_SIZE, model.N_CHANNELS)
     return data
 
 
@@ -50,7 +53,7 @@ def extract_labels(filename, num_images):
 def fake_data(num_images):
   """Generate a fake dataset that matches the dimensions of MNIST."""
   data = numpy.ndarray(
-      shape=(num_images, mnist.IMAGE_SIZE, mnist.IMAGE_SIZE, mnist.NUM_CHANNELS),
+      shape=(num_images, model.IMAGE_SIZE, model.IMAGE_SIZE, model.N_CHANNELS),
       dtype=numpy.float32)
   labels = numpy.zeros(shape=(num_images,), dtype=numpy.int64)
   for image in xrange(num_images):
@@ -63,11 +66,11 @@ def data(train):
   if train:
     images_filename = 'train-images-idx3-ubyte.gz'
     labels_filename = 'train-labels-idx1-ubyte.gz'
-    size = mnist.TRAIN_SIZE
+    size = 60000 #inference.TRAIN_SIZE
   else:
     images_filename = 't10k-images-idx3-ubyte.gz'
     labels_filename = 't10k-labels-idx1-ubyte.gz'
-    size = mnist.TEST_SIZE
+    size = 10000 #inference.TEST_SIZE
   # Get the data.
 
   images_filepath = maybe_download(images_filename)
@@ -79,11 +82,11 @@ def data(train):
 
   if train:
     # Generate a validation set.
-    validation_images = images[:mnist.VALIDATION_SIZE, ...]
-    validation_labels = labels[:mnist.VALIDATION_SIZE]
+    validation_images = images[:model.VALIDATION_SIZE, ...]
+    validation_labels = labels[:model.VALIDATION_SIZE]
 
-    train_images = images[mnist.VALIDATION_SIZE:, ...]
-    train_labels = labels[mnist.VALIDATION_SIZE:]
+    train_images = images[model.VALIDATION_SIZE:, ...]
+    train_labels = labels[model.VALIDATION_SIZE:]
 
     return train_images, train_labels, validation_images, validation_labels
   else:

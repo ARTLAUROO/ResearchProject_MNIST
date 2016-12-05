@@ -13,9 +13,9 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Simple, end-to-end, LeNet-5-like convolutional MNIST model example.
+"""Simple, end-to-end, LeNet-5-like convolutional MNIST inference example.
 
-This should achieve a test error of 0.7%. Please keep this model as simple and
+This should achieve a test error of 0.7%. Please keep this inference as simple and
 linear as possible, it is meant as a tutorial for simple convolutional models.
 Run with --self_test on the command line to execute a short self-test.
 """
@@ -184,7 +184,7 @@ def main(argv=None):  # pylint: disable=unused-argument
   fc2_biases = tf.Variable(tf.constant(
       0.1, shape=[NUM_LABELS], dtype=data_type()))
 
-  # We will replicate the model structure for the training subgraph, as well
+  # We will replicate the inference structure for the training subgraph, as well
   # as the evaluation subgraphs, while sharing the trainable parameters.
   def model(data, train=False):
     """The Model definition."""

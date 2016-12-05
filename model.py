@@ -38,9 +38,9 @@ def data_type():
   else:
     return tf.float32
 
-# We will replicate the model structure for the training subgraph, as well
+# We will replicate the inference structure for the training subgraph, as well
 # as the evaluation subgraphs, while sharing the trainable parameters.
-def model(data, convl_sizes, dense_sizes, n_labels, dropout):
+def inference(data, convl_sizes, dense_sizes, n_labels, dropout):
     """The Model definition. Currently supports 1/2 convl layers and 1 dense
         layer CNN.
 

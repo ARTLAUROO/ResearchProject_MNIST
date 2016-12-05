@@ -9,8 +9,8 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
 import model
-import mnist_input as input
-import mnist_eval
+import input as input
+import eval
 
 # Settings
 BASE_DIR = '/home/s1259008/research_project/experiments/'
@@ -22,7 +22,7 @@ SUMMARY_FREQ = 100
 EVAL_FREQ = 1000
 SAVE_FREQ = 1000
 
-N_EPOCHS = -1
+N_EPOCHS = 10
 BATCH_SIZE = 100
 DROPOUT_RATE = 0.5
 
@@ -84,20 +84,20 @@ def train(conv_settings, full_settings):
     global_step = tf.Variable(0, dtype=model.data_type(), trainable=False)
 
     # Inputs
-    images_input = tf.placeholder(model.data_type(),
+    images_pl = tf.placeholder(model.data_type(),
                                   shape=(BATCH_SIZE,
                                          model.IMAGE_SIZE,
                                          model.IMAGE_SIZE,
                                          model.N_CHANNELS))
-    labels_input = tf.placeholder(tf.int64, shape=(BATCH_SIZE,))
+    labels_pl = tf.placeholder(tf.int64, shape=(BATCH_SIZE,))
     dropout_pl = tf.placeholder(tf.float32)
 
     # Inference
-    logits = model.model(images_input, conv_settings, full_settings, model.N_LABELS, dropout_pl)
+    logits = model.inference(images_pl, conv_settings, full_settings, model.N_LABELS, dropout_pl)
     prediction = tf.nn.softmax(logits)
 
     # Loss
-    loss = model.loss(logits, labels_input)
+    loss = model.loss(logits, labels_pl)
 
     # Train node
     train_op = model.training(loss, global_step)
@@ -132,16 +132,16 @@ def train(conv_settings, full_settings):
         batch_data = train_images[offset:(offset + BATCH_SIZE), ...]
         batch_labels = train_labels[offset:(offset + BATCH_SIZE)]
         # Update net
-        feed_dict = {images_input: batch_data, labels_input: batch_labels, dropout_pl: DROPOUT_RATE}
+        feed_dict = {images_pl: batch_data, labels_pl: batch_labels, dropout_pl: DROPOUT_RATE}
         _, l, train_predictions, summary = sess.run([train_op, loss, prediction, merged], feed_dict=feed_dict)
 
         # Validate
         if step != 0 and step % EVAL_FREQ == 0:
-          validation_predictions = mnist_eval.eval_in_batches(validation_images,
-                                                              sess,
-                                                              images_input,
-                                                              prediction,
-                                                              dropout_pl)
+          validation_predictions = eval.eval_in_batches(validation_images,
+                                                        sess,
+                                                        images_pl,
+                                                        prediction,
+                                                        dropout_pl)
           validation_error = model.error_rate(validation_predictions, validation_labels)
           print('Validation error: {:.2f}% after {}/{} steps'.format(validation_error, step, n_steps))
 
@@ -160,7 +160,7 @@ def train(conv_settings, full_settings):
 
       # Evaluate
       test_images, test_labels = input.data(False)
-      test_predictions = mnist_eval.eval_in_batches(test_images, sess, images_input, prediction, dropout_pl)
+      test_predictions = eval.eval_in_batches(test_images, sess, images_pl, prediction, dropout_pl)
       test_error = model.error_rate(test_predictions, test_labels)
       print('Test error: {:.2f}%'.format(test_error))
 
