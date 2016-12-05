@@ -87,13 +87,12 @@ def eval_in_batches(data, sess, eval_data, eval_prediction, dropout_pl):
 
 def eval_ckpt(path):
     print('Evaluating CKPT: ' + path)
+    test_data, test_labels = input.data(False)
     with tf.Graph().as_default(), tf.Session() as sess:
       images_pl, dropout_pl, prediction = load_model(path, sess)
-      test_data, test_labels = input.data(False)
       predictions = eval_in_batches(test_data, sess, images_pl, prediction, dropout_pl)
       test_error = model.error_rate(predictions, test_labels)
       print('Test error: {:.2f}%'.format(test_error))
-      print('Closing session...')
     return test_error
 
 def eval_dir(path):
