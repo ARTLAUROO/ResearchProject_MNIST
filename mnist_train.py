@@ -13,17 +13,19 @@ import mnist_input as input
 import mnist_eval
 
 # Settings
-CKPT_DIR = '/home/s1259008/research_project/tmp/mnist/ckpts/'
+BASE_DIR = '/home/s1259008/research_project/experiments/'
+CKPT_DIR = BASE_DIR + 'mnist/ckpts/'
+LOGS_DIR = BASE_DIR + 'mnist/logs/'
 
-SUMMARY_FREQ = 10
+SUMMARY_FREQ = 100
 EVAL_FREQ = 1000
 SAVE_FREQ = 1000
 
-N_EPOCHS = 10
-BATCH_SIZE = 64
+N_EPOCHS = -1
+BATCH_SIZE = 100
 DROPOUT_RATE = 0.5
 
-NUM_LABELS = 10
+N_LABELS = 10
 IMAGE_SIZE = 28
 NUM_CHANNELS = 1
 
@@ -41,12 +43,25 @@ def generate_experiment_id(conv_settings, full_settings):
   for setting in full_settings:
     layer_settings += '-{:d}'.format(setting)
 
-  return layer_settings + '_' + date_time
+  # Add batch and epoch settings
+  n_epochs = N_EPOCHS
+  if n_epochs == -1:
+    n_epochs = None
+
+  train_settings = 'B-{}-E-{}'.format(BATCH_SIZE, n_epochs)
+
+  return '{}_{}_{}'.format(layer_settings, train_settings, date_time)
 
 
-def create_experiment_dir(path):
-  if not tf.gfile.Exists(path):
-    tf.gfile.MakeDirs(path)
+def create_experiment_dirs(experiment_id):
+  ckpt_path = CKPT_DIR + experiment_id
+  if not tf.gfile.Exists(ckpt_path):
+    tf.gfile.MakeDirs(ckpt_path)
+
+  # Not needed I think, created by summary_writer
+  # logs_path = LOGS_DIR + experiment_id
+  # if not tf.gfile.Exists(logs_path):
+  #   tf.gfile.MakeDirs(logs_path)
 
 
 def calc_total_params():
@@ -65,7 +80,8 @@ def calc_total_params():
 
 
 def train(conv_settings, full_settings):
-  print("Training model convl:" + str(conv_settings) + ' dense:' + str(full_settings))
+  experiment_id = generate_experiment_id(conv_settings, full_settings)
+  print('Experiment id {}'.format(experiment_id))
 
   with tf.Graph().as_default():
     global_step = tf.Variable(0, dtype=mnist.data_type(), trainable=False)
@@ -80,7 +96,7 @@ def train(conv_settings, full_settings):
     dropout_pl = tf.placeholder(tf.float32)
 
     # Inference
-    logits = mnist.model(images_input, conv_settings, full_settings, NUM_LABELS, dropout_pl)
+    logits = mnist.model(images_input, conv_settings, full_settings, N_LABELS, dropout_pl)
     prediction = tf.nn.softmax(logits)
 
     # Loss
@@ -92,10 +108,8 @@ def train(conv_settings, full_settings):
     # Setup saver and related vars
     saver = tf.train.Saver(max_to_keep=None)
     # Create dir for ckpts
-    experiment_id = generate_experiment_id(conv_settings, full_settings)
-    experiment_dir = CKPT_DIR + experiment_id + '/'
-    create_experiment_dir(experiment_dir)
-    ckpt_path = experiment_dir + 'mnist.ckpt'
+    create_experiment_dirs(experiment_id)
+    ckpt_path = CKPT_DIR + experiment_id + '/mnist.ckpt'
 
     # Setup summary writer for Tensorboard
     merged = tf.merge_all_summaries()
@@ -107,10 +121,14 @@ def train(conv_settings, full_settings):
     #  Train
     with tf.Session() as sess:
       tf.initialize_all_variables().run()
-      summary_writer = tf.train.SummaryWriter(CKPT_DIR + 'train', sess.graph)
+      summary_writer = tf.train.SummaryWriter(LOGS_DIR + 'train', sess.graph)
 
-      n_steps = int(N_EPOCHS * train_size) // BATCH_SIZE
-      for step in xrange(n_steps):
+      step = 0
+      if N_EPOCHS >= 0:
+        n_steps = int(N_EPOCHS * train_size) // BATCH_SIZE
+      else:
+        n_steps = None
+      while step < n_steps or N_EPOCHS == -1:
         # Train
         # Generate batch
         offset = (step * BATCH_SIZE) % (train_size - BATCH_SIZE)
@@ -118,32 +136,36 @@ def train(conv_settings, full_settings):
         batch_labels = train_labels[offset:(offset + BATCH_SIZE)]
         # Update net
         feed_dict = {images_input: batch_data, labels_input: batch_labels, dropout_pl: DROPOUT_RATE}
-        _, l, predictions, summary = sess.run([train_op, loss, prediction, merged], feed_dict=feed_dict)
+        _, l, train_predictions, summary = sess.run([train_op, loss, prediction, merged], feed_dict=feed_dict)
 
         # Validate
-        if step % EVAL_FREQ == 0:
-          predictions = mnist_eval.eval_in_batches(validation_images,
-                                                   sess,
-                                                   images_input,
-                                                   prediction,
-                                                   dropout_pl)
-          validation_error = mnist.error_rate(predictions, validation_labels)
-          print('Validation error: %.2f%% after %d/%d steps' % (validation_error, step, n_steps))
+        if step != 0 and step % EVAL_FREQ == 0:
+          validation_predictions = mnist_eval.eval_in_batches(validation_images,
+                                                              sess,
+                                                              images_input,
+                                                              prediction,
+                                                              dropout_pl)
+          validation_error = mnist.error_rate(validation_predictions, validation_labels)
+          print('Validation error: {:.2f}% after {}/{} steps'.format(validation_error, step, n_steps))
+
+        # Save
+        if step != 0 and step % SAVE_FREQ == 0 or step + 1 == n_steps:
+          ckpt_file_path = saver.save(sess, ckpt_path, global_step=step)
+          print('Saved checkpoint file: {}'.format(ckpt_file_path))
 
         # Summaries
         if step % SUMMARY_FREQ == 0:
+          train_error = mnist.error_rate(train_predictions, batch_labels)
+          print('Training error: {:.2f}% after {}/{} steps, loss {:.2f}'.format(train_error, step, n_steps, l))
           summary_writer.add_summary(summary, step)
 
-        # Save
-        if step % SAVE_FREQ == 0 or step + 1 == n_steps:
-          ckpt_file_path = saver.save(sess, ckpt_path, global_step=step)
-          print('Saved checkpoint file: %s' % ckpt_file_path)
+        step += 1
 
       # Evaluate
-      eval_images, eval_labels = input.data(False)
-      predictions = mnist_eval.eval_in_batches(eval_images, sess, images_input, prediction, dropout_pl)
-      validation_error = mnist.error_rate(predictions, validation_labels)
-      print('Validation error: %.2f%% after %d/%d steps' % (validation_error, step, n_steps))
+      test_images, test_labels = input.data(False)
+      test_predictions = mnist_eval.eval_in_batches(test_images, sess, images_input, prediction, dropout_pl)
+      test_error = mnist.error_rate(test_predictions, test_labels)
+      print('Test error: {:.2f}%'.format(test_error))
 
 
 if __name__ == '__main__':
