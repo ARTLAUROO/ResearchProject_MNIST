@@ -95,7 +95,7 @@ def pca_reduction(weights, biases, n_components):
   array = np.transpose(array)
 
   cumsum = np.cumsum(pca.explained_variance_ratio_) * 100
-  print('Total of variance kept: %f.2 in %d components' % (cumsum[-1], n_components))
+  # print('Total of variance kept: %f.2 in %d components' % (cumsum[-1], n_components))
 
   weights, biases = to_var_shaped(array, 5, 5, 1, n_kernels_layer_1)
 
@@ -146,7 +146,7 @@ def generate_pca_plot(ckpt_path):
 def create_pca_model(ckpt_path):
   print('Apply PCA to CKPT: ' + ckpt_path)
   with tf.Graph().as_default(), tf.Session() as sess:
-    images_pl, dropout_pl, prediction = eval.load_model(ckpt_path, sess)
+    eval.load_model(ckpt_path, sess)
 
     saver = tf.train.Saver(max_to_keep=None)
 
@@ -172,7 +172,7 @@ def create_pca_model(ckpt_path):
       sess.run(variable_b.assign(pca_biases))
 
       # <..>/<..>.ckpt-xxx to # <..>/<..>.pca-n_components.ckpt-xxx
-      pca_ckpt_path = '{}pca-{}-v-{:.2f}.{}'.format(pca_ckpt_dir, n_components, cumsum_variance, ckpt_path_splitted[-1])
+      pca_ckpt_path = '{}pca-{}_v-{:.2f}_.{}'.format(pca_ckpt_dir, n_components, cumsum_variance, ckpt_path_splitted[-1])
       pca_ckpt_file_path = saver.save(sess, pca_ckpt_path)
       print('Saved PCA checkpoint file: {}'.format(pca_ckpt_file_path))
 
@@ -364,8 +364,7 @@ if __name__ == '__main__':
     exit()
 
   path = sys.argv[1]
-  dir_or_ckpt_name = path[-1]
-  if '.ckpt' in dir_or_ckpt_name:
+  if '.ckpt' in path:
     create_pca_model(path)
   else:
     create_pca_models(path)

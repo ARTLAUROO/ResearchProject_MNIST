@@ -37,12 +37,9 @@ def get_settings_from_experiment_id(experiment_id):
     return conv, full
 
 
-def load_model(ckpt_path, sess):
+def load_model(ckpt_path, experiment_id, sess):
     print('Loading: {}'.format(ckpt_path))
 
-    # Load settings from dir name
-    ckpt_path_splitted = ckpt_path.split('/')
-    experiment_id = ckpt_path_splitted[-2] # == is dir name
     conv_settings, full_settings = get_settings_from_experiment_id(experiment_id)
 
     # Inputs
@@ -85,11 +82,11 @@ def eval_in_batches(data, sess, eval_data, eval_prediction, dropout_pl):
     return predictions
 
 
-def eval_ckpt(path):
+def eval_ckpt(path, experiment_id):
     print('Evaluating CKPT: ' + path)
     test_data, test_labels = input.data(False)
     with tf.Graph().as_default(), tf.Session() as sess:
-      images_pl, dropout_pl, prediction = load_model(path, sess)
+      images_pl, dropout_pl, prediction = load_model(path, experiment_id, sess)
       predictions = eval_in_batches(test_data, sess, images_pl, prediction, dropout_pl)
       test_error = model.error_rate(predictions, test_labels)
       print('Test error: {:.2f}%'.format(test_error))
@@ -103,7 +100,11 @@ def eval_dir(path):
       ckpts.append(path + file)
 
   for ckpt in sorted(ckpts):
-    eval_ckpt(ckpt)
+    # Load settings from dir name
+    ckpt_path_splitted = ckpt.split('/')
+    experiment_id = ckpt_path_splitted[-2]  # == is dir name
+
+    eval_ckpt(ckpt, experiment_id)
 
 if __name__ == '__main__':
     if (len(sys.argv) < 2):
