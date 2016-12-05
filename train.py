@@ -1,386 +1,191 @@
-# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
-
-"""Simple, end-to-end, LeNet-5-like convolutional MNIST model example.
-
-This should achieve a test error of 0.7%. Please keep this model as simple and
-linear as possible, it is meant as a tutorial for simple convolutional models.
-Run with --self_test on the command line to execute a short self-test.
-"""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import gzip
-import os
 import sys
 import time
 
-import numpy
-from six.moves import urllib
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
-import numpy as np
-from sklearn.decomposition import PCA
+import model
+import mnist_input as input
+import mnist_eval
 
-from PIL import Image
-from numpy import linalg as LA
-import pylab as pl
+# Settings
+BASE_DIR = '/home/s1259008/research_project/experiments/'
+CKPT_DIR = BASE_DIR + 'mnist/ckpts/'
+LOGS_DIR = BASE_DIR + 'mnist/logs/'
+CKPT_FILENAME = 'mnist.ckpt'
 
-SOURCE_URL = 'http://yann.lecun.com/exdb/mnist/'
-WORK_DIRECTORY = '/tmp/mnist/data'
-IMAGE_SIZE = 28
-NUM_CHANNELS = 1
-PIXEL_DEPTH = 255
-NUM_LABELS = 10
-VALIDATION_SIZE = 5000  # Size of the validation set.
-SEED = 66478  # Set to None for random seed.
-BATCH_SIZE = 55
-NUM_EPOCHS = 10
-EVAL_BATCH_SIZE = BATCH_SIZE
-EVAL_FREQUENCY = 1000  # Number of steps between evaluations.
-SAVE_FREQUENCY = 1000
-N_FIRST_LAYER_FILTERS = 1
-N_SECOND_LAYER_FILTERS = 2
+SUMMARY_FREQ = 100
+EVAL_FREQ = 1000
+SAVE_FREQ = 1000
 
-tf.app.flags.DEFINE_boolean("self_test", False, "True if running a self test.")
-tf.app.flags.DEFINE_boolean('use_fp16', False,
-                            "Use half floats instead of full floats if True.")
-FLAGS = tf.app.flags.FLAGS
-
-def to_array_shaped (var_shaped_w, var_shaped_b):
-  rect_shaped = np.zeros([N_FIRST_LAYER_FILTERS, (5*5)+1])
-  for kernel_i in xrange(N_FIRST_LAYER_FILTERS):
-    for i in xrange(5):
-      for j in xrange(5):
-        rect_shaped[kernel_i, (i*5)+j] = var_shaped_w[i, j, 0, kernel_i]
-    rect_shaped[kernel_i, (5*5)] = var_shaped_b[kernel_i]
-  return rect_shaped
-
-def to_var_shaped (rect_shaped):
-  var_shaped_w = np.zeros([5, 5, 1, N_FIRST_LAYER_FILTERS])
-  var_shaped_b = np.zeros([N_FIRST_LAYER_FILTERS])
-  for kernel_i in xrange(N_FIRST_LAYER_FILTERS):
-    for i in xrange(5):
-      for j in xrange(5):
-        var_shaped_w[i, j, 0, kernel_i] = rect_shaped[kernel_i, i * 5 + j]
-    var_shaped_b[kernel_i] = rect_shaped[kernel_i, (5*5)]
-  return var_shaped_w, var_shaped_b
-
-def data_type():
-  """Return the type of the activations, weights, and placeholder variables."""
-  if FLAGS.use_fp16:
-    return tf.float16
-  else:
-    return tf.float32
+N_EPOCHS = -1
+BATCH_SIZE = 100
+DROPOUT_RATE = 0.5
 
 
-def maybe_download(filename):
-  """Download the data from Yann's website, unless it's already here."""
-  if not tf.gfile.Exists(WORK_DIRECTORY):
-    tf.gfile.MakeDirs(WORK_DIRECTORY)
-  filepath = os.path.join(WORK_DIRECTORY, filename)
-  if not tf.gfile.Exists(filepath):
-    filepath, _ = urllib.request.urlretrieve(SOURCE_URL + filename, filepath)
-    with tf.gfile.GFile(filepath) as f:
-      size = f.Size()
-    print('Successfully downloaded', filename, size, 'bytes.')
-  return filepath
+def generate_experiment_id(conv_settings, full_settings):
+  date_time = time.strftime("%d-%b-%Y_%H-%M-%S", time.gmtime())
+
+  # Add conv layer settings
+  layer_settings = 'C'
+  for setting in conv_settings:
+    layer_settings += '-{:d}'.format(setting)
+
+  # Add full layer settings
+  layer_settings += '-F'
+  for setting in full_settings:
+    layer_settings += '-{:d}'.format(setting)
+
+  # Add batch and epoch settings
+  n_epochs = N_EPOCHS
+  if n_epochs == -1:
+    n_epochs = None
+
+  train_settings = 'B-{}-E-{}'.format(BATCH_SIZE, n_epochs)
+
+  return '{}_{}_{}'.format(layer_settings, train_settings, date_time)
 
 
-def extract_data(filename, num_images):
-  """Extract the images into a 4D tensor [image index, y, x, channels].
+def create_experiment_dirs(experiment_id):
+  ckpt_path = CKPT_DIR + experiment_id
+  if not tf.gfile.Exists(ckpt_path):
+    tf.gfile.MakeDirs(ckpt_path)
 
-  Values are rescaled from [0, 255] down to [-0.5, 0.5].
-  """
-  print('Extracting', filename)
-  with gzip.open(filename) as bytestream:
-    bytestream.read(16)
-    buf = bytestream.read(IMAGE_SIZE * IMAGE_SIZE * num_images * NUM_CHANNELS)
-    data = numpy.frombuffer(buf, dtype=numpy.uint8).astype(numpy.float32)
-    data = (data - (PIXEL_DEPTH / 2.0)) / PIXEL_DEPTH
-    data = data.reshape(num_images, IMAGE_SIZE, IMAGE_SIZE, NUM_CHANNELS)
-    return data
+  # Not needed I think, created by summary_writer
+  # logs_path = LOGS_DIR + experiment_id
+  # if not tf.gfile.Exists(logs_path):
+  #   tf.gfile.MakeDirs(logs_path)
 
 
-def extract_labels(filename, num_images):
-  """Extract the labels into a vector of int64 label IDs."""
-  print('Extracting', filename)
-  with gzip.open(filename) as bytestream:
-    bytestream.read(8)
-    buf = bytestream.read(1 * num_images)
-    labels = numpy.frombuffer(buf, dtype=numpy.uint8).astype(numpy.int64)
-  return labels
+def calc_total_params():
+  """From: http://stackoverflow.com/a/38161314/2351350"""
+  total_parameters = 0
+  for variable in tf.trainable_variables():
+    # Shape is an array of tf.Dimension
+    shape = variable.get_shape()
+    print('v shape %s' % shape)
+    variable_parametes = 1
+    for dim in shape:
+      variable_parametes *= dim.value
+    print('v params %d' % variable_parametes)
+    total_parameters += variable_parametes
+  print('total params %d' % total_parameters)
 
 
-def fake_data(num_images):
-  """Generate a fake dataset that matches the dimensions of MNIST."""
-  data = numpy.ndarray(
-      shape=(num_images, IMAGE_SIZE, IMAGE_SIZE, NUM_CHANNELS),
-      dtype=numpy.float32)
-  labels = numpy.zeros(shape=(num_images,), dtype=numpy.int64)
-  for image in xrange(num_images):
-    label = image % 2
-    data[image, :, :, 0] = label - 0.5
-    labels[image] = label
-  return data, labels
+def train(conv_settings, full_settings):
+  experiment_id = generate_experiment_id(conv_settings, full_settings)
+  print('Experiment id {}'.format(experiment_id))
 
+  with tf.Graph().as_default():
+    global_step = tf.Variable(0, dtype=model.data_type(), trainable=False)
 
-def error_rate(predictions, labels):
-  """Return the error rate based on dense predictions and sparse labels."""
-  return 100.0 - (
-      100.0 *
-      numpy.sum(numpy.argmax(predictions, 1) == labels) /
-      predictions.shape[0])
+    # Inputs
+    images_input = tf.placeholder(model.data_type(),
+                                  shape=(BATCH_SIZE,
+                                         model.IMAGE_SIZE,
+                                         model.IMAGE_SIZE,
+                                         model.N_CHANNELS))
+    labels_input = tf.placeholder(tf.int64, shape=(BATCH_SIZE,))
+    dropout_pl = tf.placeholder(tf.float32)
 
+    # Inference
+    logits = model.model(images_input, conv_settings, full_settings, model.N_LABELS, dropout_pl)
+    prediction = tf.nn.softmax(logits)
 
-def main(argv=None):  # pylint: disable=unused-argument
-  if FLAGS.self_test:
-    print('Running self-test.')
-    train_data, train_labels = fake_data(256)
-    validation_data, validation_labels = fake_data(EVAL_BATCH_SIZE)
-    test_data, test_labels = fake_data(EVAL_BATCH_SIZE)
-    num_epochs = 1
-  else:
-    # Get the data.
-    train_data_filename = maybe_download('train-images-idx3-ubyte.gz')
-    train_labels_filename = maybe_download('train-labels-idx1-ubyte.gz')
-    test_data_filename = maybe_download('t10k-images-idx3-ubyte.gz')
-    test_labels_filename = maybe_download('t10k-labels-idx1-ubyte.gz')
+    # Loss
+    loss = model.loss(logits, labels_input)
 
-    # Extract it into numpy arrays.
-    train_data = extract_data(train_data_filename, 60000)
-    train_labels = extract_labels(train_labels_filename, 60000)
-    test_data = extract_data(test_data_filename, 10000)
-    test_labels = extract_labels(test_labels_filename, 10000)
+    # Train node
+    train_op = model.training(loss, global_step)
 
-    # Generate a validation set.
-    validation_data = train_data[:VALIDATION_SIZE, ...]
-    validation_labels = train_labels[:VALIDATION_SIZE]
-    train_data = train_data[VALIDATION_SIZE:, ...]
-    train_labels = train_labels[VALIDATION_SIZE:]
-    num_epochs = NUM_EPOCHS
-  train_size = train_labels.shape[0]
+    # Setup saver and related vars
+    saver = tf.train.Saver(max_to_keep=None)
+    # Create dir for ckpts
+    create_experiment_dirs(experiment_id)
+    ckpt_path = CKPT_DIR + experiment_id + '/' + CKPT_FILENAME
 
-  # This is where training samples and labels are fed to the graph.
-  # These placeholder nodes will be fed a batch of training data at each
-  # training step using the {feed_dict} argument to the Run() call below.
-  train_data_node = tf.placeholder(
-      data_type(),
-      shape=(BATCH_SIZE, IMAGE_SIZE, IMAGE_SIZE, NUM_CHANNELS))
-  train_labels_node = tf.placeholder(tf.int64, shape=(BATCH_SIZE,))
-  eval_data = tf.placeholder(
-      data_type(),
-      shape=(EVAL_BATCH_SIZE, IMAGE_SIZE, IMAGE_SIZE, NUM_CHANNELS))
+    # Setup summary writer for Tensorboard
+    merged = tf.merge_all_summaries()
 
-  # The variables below hold all the trainable weights. They are passed an
-  # initial value which will be assigned when we call:
-  # {tf.initialize_all_variables().run()}
-  
-  conv1_weights = tf.Variable(
-      tf.truncated_normal([5, 5, NUM_CHANNELS, N_FIRST_LAYER_FILTERS],  # 5x5 filter, depth N_FIRST_LAYER_FILTERS
-                          stddev=0.1,
-                          seed=SEED, dtype=data_type()))
-  conv1_biases = tf.Variable(tf.zeros([N_FIRST_LAYER_FILTERS], dtype=data_type()))
-  conv2_weights = tf.Variable(tf.truncated_normal(
-      [5, 5, N_FIRST_LAYER_FILTERS, N_SECOND_LAYER_FILTERS], stddev=0.1,
-      seed=SEED, dtype=data_type()))
-  conv2_biases = tf.Variable(tf.constant(0.1, shape=[N_SECOND_LAYER_FILTERS], dtype=data_type()))
-  fc1_weights = tf.Variable(  # fully connected, depth 512.
-      tf.truncated_normal([IMAGE_SIZE // 4 * IMAGE_SIZE // 4 * N_SECOND_LAYER_FILTERS, 512],
-                          stddev=0.1,
-                          seed=SEED,
-                          dtype=data_type()))
-  fc1_biases = tf.Variable(tf.constant(0.1, shape=[512], dtype=data_type()))
-  fc2_weights = tf.Variable(tf.truncated_normal([512, NUM_LABELS],
-                                                stddev=0.1,
-                                                seed=SEED,
-                                                dtype=data_type()))
-  fc2_biases = tf.Variable(tf.constant(
-      0.1, shape=[NUM_LABELS], dtype=data_type()))
+    # Get data.
+    train_images, train_labels, validation_images, validation_labels = input.data(True)
+    train_size = train_labels.shape[0]
 
-  # We will replicate the model structure for the training subgraph, as well
-  # as the evaluation subgraphs, while sharing the trainable parameters.
-  def model(data, train=False):
-    """The Model definition."""
-    # 2D convolution, with 'SAME' padding (i.e. the output feature map has
-    # the same size as the input). Note that {strides} is a 4D array whose
-    # shape matches the data layout: [image index, y, x, depth].
-    conv = tf.nn.conv2d(data,
-                        conv1_weights,
-                        strides=[1, 1, 1, 1],
-                        padding='SAME')
-    # Bias and rectified linear non-linearity.
-    relu = tf.nn.relu(tf.nn.bias_add(conv, conv1_biases))
-    # Max pooling. The kernel size spec {ksize} also follows the layout of
-    # the data. Here we have a pooling window of 2, and a stride of 2.
-    pool = tf.nn.max_pool(relu,
-                          ksize=[1, 2, 2, 1],
-                          strides=[1, 2, 2, 1],
-                          padding='SAME')
-    conv = tf.nn.conv2d(pool,
-                        conv2_weights,
-                        strides=[1, 1, 1, 1],
-                        padding='SAME')
-    relu = tf.nn.relu(tf.nn.bias_add(conv, conv2_biases))
-    pool = tf.nn.max_pool(relu,
-                          ksize=[1, 2, 2, 1],
-                          strides=[1, 2, 2, 1],
-                          padding='SAME')
-    # Reshape the feature map cuboid into a 2D matrix to feed it to the
-    # fully connected layers.
-    pool_shape = pool.get_shape().as_list()
-    reshape = tf.reshape(
-        pool,
-        [pool_shape[0], pool_shape[1] * pool_shape[2] * pool_shape[3]])
-    # Fully connected layer. Note that the '+' operation automatically
-    # broadcasts the biases.
-    hidden = tf.nn.relu(tf.matmul(reshape, fc1_weights) + fc1_biases)
-    # Add a 50% dropout during training only. Dropout also scales
-    # activations such that no rescaling is needed at evaluation time.
-    if train:
-      hidden = tf.nn.dropout(hidden, 0.5, seed=SEED)
-    return tf.matmul(hidden, fc2_weights) + fc2_biases
-
-  # Training computation: logits + cross-entropy loss.
-  logits = model(train_data_node, True)
-  loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
-      logits, train_labels_node))
-
-  # L2 regularization for the fully connected parameters.
-  regularizers = (tf.nn.l2_loss(fc1_weights) + tf.nn.l2_loss(fc1_biases) +
-                  tf.nn.l2_loss(fc2_weights) + tf.nn.l2_loss(fc2_biases))
-  # Add the regularization term to the loss.
-  loss += 5e-4 * regularizers
-
-  # Optimizer: set up a variable that's incremented once per batch and
-  # controls the learning rate decay.
-  batch = tf.Variable(0, dtype=data_type())
-  # Decay once per epoch, using an exponential schedule starting at 0.01.
-  learning_rate = tf.train.exponential_decay(
-      0.01,                # Base learning rate.
-      batch * BATCH_SIZE,  # Current index into the dataset.
-      train_size,          # Decay step.
-      0.95,                # Decay rate.
-      staircase=True)
-  # Use simple momentum for the optimization.
-  optimizer = tf.train.MomentumOptimizer(learning_rate,
-                                         0.9).minimize(loss,
-                                                       global_step=batch)
-
-  # Predictions for the current training minibatch.
-  train_prediction = tf.nn.softmax(logits)
-
-  # Predictions for the test and validation, which we'll compute less often.
-  eval_prediction = tf.nn.softmax(model(eval_data))
-
-  # Small utility function to evaluate a dataset by feeding batches of data to
-  # {eval_data} and pulling the results from {eval_predictions}.
-  # Saves memory and enables this to run on smaller GPUs.
-  def eval_in_batches(data, sess):
-    """Get all predictions for a dataset by running it in small batches."""
-    size = data.shape[0]
-    if size < EVAL_BATCH_SIZE:
-      raise ValueError("batch size for evals larger than dataset: %d" % size)
-    predictions = numpy.ndarray(shape=(size, NUM_LABELS), dtype=numpy.float32)
-    for begin in xrange(0, size, EVAL_BATCH_SIZE):
-      end = begin + EVAL_BATCH_SIZE
-      if end <= size:
-        predictions[begin:end, :] = sess.run(
-            eval_prediction,
-            feed_dict={eval_data: data[begin:end, ...]})
-      else:
-        batch_predictions = sess.run(
-            eval_prediction,
-            feed_dict={eval_data: data[-EVAL_BATCH_SIZE:, ...]})
-        predictions[begin:, :] = batch_predictions[begin - size:, :]
-    return predictions
-
-  saver = tf.train.Saver(max_to_keep=None)
-
-  # Create a local session to run the training.
-  start_time = time.time()
-  with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
-    # Run all the initializers to prepare the trainable parameters.
-    if True:
+    #  Train
+    with tf.Session() as sess:
       tf.initialize_all_variables().run()
-      print('Initialized!')
-    else:
-      saver.restore(sess, "/tmp/mnist/ckpts/mnist_pca_3-9999")
-      print('Loaded!')
+      summary_writer = tf.train.SummaryWriter(LOGS_DIR + 'training', sess.graph)
 
-    if False:
-      w_original = conv1_weights.eval()
-      b_original = conv1_biases.eval()
-      n_components = 4
-      pca = PCA(n_components=n_components)
-      data = to_array_shaped(w_original, b_original)
-      data = np.transpose(data)
-      final_data = pca.fit_transform(data)
-      new_data = pca.inverse_transform(final_data)
-      new_data = np.transpose(new_data)
-      w, b = to_var_shaped(new_data)
-      sess.run(conv1_weights.assign(w))
-      sess.run(conv1_biases.assign(b))
-      print("applied PCA: %d" % n_components)
+      step = 0
+      if N_EPOCHS >= 0:
+        n_steps = int(N_EPOCHS * train_size) // BATCH_SIZE
+      else:
+        n_steps = None
+      while step < n_steps or N_EPOCHS == -1:
+        # Train
+        # Generate batch
+        offset = (step * BATCH_SIZE) % (train_size - BATCH_SIZE)
+        batch_data = train_images[offset:(offset + BATCH_SIZE), ...]
+        batch_labels = train_labels[offset:(offset + BATCH_SIZE)]
+        # Update net
+        feed_dict = {images_input: batch_data, labels_input: batch_labels, dropout_pl: DROPOUT_RATE}
+        _, l, train_predictions, summary = sess.run([train_op, loss, prediction, merged], feed_dict=feed_dict)
 
-    # Loop through training steps.
-    steps = int(num_epochs * train_size) // BATCH_SIZE
-    print(num_epochs)
-    print(train_size)
-    print(BATCH_SIZE)
-    print(steps)
-    for step in xrange(steps):
-      # Compute the offset of the current minibatch in the data.
-      # Note that we could use better randomization across epochs.
-      offset = (step * BATCH_SIZE) % (train_size - BATCH_SIZE)
-      batch_data = train_data[offset:(offset + BATCH_SIZE), ...]
-      batch_labels = train_labels[offset:(offset + BATCH_SIZE)]
-      # This dictionary maps the batch data (as a numpy array) to the
-      # node in the graph it should be fed to.
-      feed_dict = {train_data_node: batch_data,
-                   train_labels_node: batch_labels}
-      # Run the graph and fetch some of the nodes.
-      _, l, lr, predictions = sess.run(
-          [optimizer, loss, learning_rate, train_prediction],
-          feed_dict=feed_dict)
-      if step % EVAL_FREQUENCY == 0:
-        elapsed_time = time.time() - start_time
-        start_time = time.time()
-        print('Step %d (epoch %.2f), %.1f ms' %
-              (step, float(step) * BATCH_SIZE / train_size,
-               1000 * elapsed_time / EVAL_FREQUENCY))
-        print('Minibatch loss: %.3f, learning rate: %.6f' % (l, lr))
-        print('Minibatch error: %.1f%%' % error_rate(predictions, batch_labels))
-        print('Validation error: %.1f%%' % error_rate(
-            eval_in_batches(validation_data, sess), validation_labels))
-        sys.stdout.flush()
+        # Validate
+        if step != 0 and step % EVAL_FREQ == 0:
+          validation_predictions = mnist_eval.eval_in_batches(validation_images,
+                                                              sess,
+                                                              images_input,
+                                                              prediction,
+                                                              dropout_pl)
+          validation_error = model.error_rate(validation_predictions, validation_labels)
+          print('Validation error: {:.2f}% after {}/{} steps'.format(validation_error, step, n_steps))
 
-      # if step % SAVE_FREQUENCY == 0 or step + 1 == steps:
-      #   save_path = saver.save(sess, "/tmp/mnist/ckpts/mnist_pca_3", global_step=step)
+        # Save
+        if step != 0 and step % SAVE_FREQ == 0 or step + 1 == n_steps:
+          ckpt_file_path = saver.save(sess, ckpt_path, global_step=step)
+          print('Saved checkpoint file: {}'.format(ckpt_file_path))
 
+        # Summaries
+        if step % SUMMARY_FREQ == 0:
+          train_error = model.error_rate(train_predictions, batch_labels)
+          print('Training error: {:.2f}% after {}/{} steps, loss {:.2f}'.format(train_error, step, n_steps, l))
+          summary_writer.add_summary(summary, step)
 
-    # Finally print the result!
-    test_error = error_rate(eval_in_batches(test_data, sess), test_labels)
-    print('Test error: %.1f%%' % test_error)
-    if FLAGS.self_test:
-      print('test_error', test_error)
-      assert test_error == 0.0, 'expected 0.0 test_error, got %.2f' % (
-          test_error,)
+        step += 1
+
+      # Evaluate
+      test_images, test_labels = input.data(False)
+      test_predictions = mnist_eval.eval_in_batches(test_images, sess, images_input, prediction, dropout_pl)
+      test_error = model.error_rate(test_predictions, test_labels)
+      print('Test error: {:.2f}%'.format(test_error))
 
 
 if __name__ == '__main__':
-  tf.app.run()
+  """
+  Usage, one of the following:
+  python training.py n_conv_1 n_conv_2 n_full_1
+  python training.py n_conv_1 n_full_1
+  """
+
+  n_args = len(sys.argv)
+  if n_args is 3:
+    convl = [int(sys.argv[1])]
+    dense = [int(sys.argv[2])]
+    train(convl, dense)
+  elif n_args is 4:
+    convl = [int(sys.argv[1]), int(sys.argv[2])]
+    dense = [int(sys.argv[3])]
+    train(convl, dense)
+  else:
+    print('invalid number of arguments')
+    print('Number of arguments:', len(sys.argv), 'arguments.')
+    print('Argument List:', str(sys.argv))
+    print('Ways of calling:')
+    print('python mnist_train n_convl1 n_dense1')
+    print('python mnist_train n_convl1 n_convl2 n_dense1')
+    exit()

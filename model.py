@@ -12,25 +12,21 @@ from six.moves import urllib
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
-SOURCE_URL = 'http://yann.lecun.com/exdb/mnist/'
-WORK_DIRECTORY = '/home/s1259008/research_project/tmp/mnist/data'
-TENSORBOARD_DIRECTORY = '/home/s1259008/research_project/tmp/mnist/tensorboard'
-CHECKPOINT_DIR = '/home/s1259008/research_project/tmp/mnist/ckpts/'
-CHECKPOINT_FILENAME = 'mnist.ckpt'
+import train
+
+
 PLOT_DIR = '/home/s1259008/research_project/tmp/mnist/plots/'
-IMAGE_SIZE = 28
-NUM_CHANNELS = 1
-PIXEL_DEPTH = 255
-NUM_LABELS = 10
+
 TRAIN_SIZE = 60000            # Size of the training set.
 TEST_SIZE = 10000             # Size of the test set.
 VALIDATION_SIZE = 5000        # Size of the validation set.
-SEED = None                   # Set to None for random seed.
-BATCH_SIZE = 64
-NUM_EPOCHS = 30
-EVAL_FREQUENCY = 100        # Number of evaluations for an entire run.
-SAVE_FREQUENCY = 1
+SEED = None
 USE_FP16 = False
+
+N_LABELS = 10
+IMAGE_SIZE = 28
+PIXEL_DEPTH = 255
+N_CHANNELS = 1
 
 # Constants describing the training process.
 DECAY_STEP_SIZE = 60000 # TODO == TRAIN_SIZE
@@ -44,7 +40,7 @@ def data_type():
 
 # We will replicate the model structure for the training subgraph, as well
 # as the evaluation subgraphs, while sharing the trainable parameters.
-def model(data, convl_sizes, dense_sizes, n_labels, train=False):
+def model(data, convl_sizes, dense_sizes, n_labels, dropout):
     """The Model definition. Currently supports 1/2 convl layers and 1 dense
         layer CNN.
 
@@ -56,7 +52,7 @@ def model(data, convl_sizes, dense_sizes, n_labels, train=False):
     dense_sizes -- List in which int specifies the size of the respective
         dense layer, must non-empty. Only accepts 1 layer currently.
     n_labels -- Number of labels.
-    train -- True if models is to be used for training.
+    training -- True if models is to be used for training.
     """
     assert len(convl_sizes) > 0 and len(dense_sizes) > 0
 
@@ -64,13 +60,15 @@ def model(data, convl_sizes, dense_sizes, n_labels, train=False):
     # the same size as the input). Note that {strides} is a 4D array whose
     # shape matches the data layout: [image index, y, x, depth].
 
+    tf.image_summary('input', data, max_images=3, collections=None, name=None)
+
     #add first convl layer
     with tf.variable_scope('conv1') as scope:
         initializer = tf.truncated_normal_initializer(stddev=0.1,
                                                       seed=SEED,
                                                       dtype=tf.float32)
         kernel = tf.get_variable('weights',
-                                 [5, 5, NUM_CHANNELS, convl_sizes[0]],
+                                 [5, 5, N_CHANNELS, convl_sizes[0]],
                                  initializer=initializer)
         conv = tf.nn.conv2d(data,
                             kernel,
@@ -86,6 +84,11 @@ def model(data, convl_sizes, dense_sizes, n_labels, train=False):
                           strides=[1, 2, 2, 1],
                           padding='SAME',
                           name='pool1')
+
+
+    tensor = tf.split(3, convl_sizes[0], pool, name='split')
+    for i in xrange(len(tensor)):
+        tf.image_summary('conv1_kernel-' + str(i), tensor[i], max_images=3, collections=None, name=None)
 
     # add second convl layer
     if len(convl_sizes) > 1:
@@ -113,9 +116,6 @@ def model(data, convl_sizes, dense_sizes, n_labels, train=False):
                               padding='SAME',
                               name='pool2')
 
-        fc_size = IMAGE_SIZE // 4 * IMAGE_SIZE // 4 * convl_sizes[1]
-    else:
-        fc_size = IMAGE_SIZE // 2 * IMAGE_SIZE // 2 * convl_sizes[0]
 
     # add first dense layer
     with tf.variable_scope('local1') as scope:
@@ -130,6 +130,14 @@ def model(data, convl_sizes, dense_sizes, n_labels, train=False):
         initializer = tf.truncated_normal_initializer(stddev=0.1,
                                                       seed=SEED,
                                                       dtype=data_type())
+        # img height/width after pooling, note each convl layer is followed by a
+        # single pool layer
+        img_height = (IMAGE_SIZE // (2 * len(convl_sizes)))
+        img_width = (IMAGE_SIZE // (2 * len(convl_sizes)))
+        img_size = img_width * img_height
+        # convl_sizes[-1] images are produced by the last convl layer, each pixel in
+        # those images is connected with each node in the dense layer
+        fc_size = convl_sizes[-1] * img_size
         weights = tf.get_variable('weights',
                                   [fc_size, dense_sizes[0]],
                                   initializer=initializer)
@@ -140,8 +148,9 @@ def model(data, convl_sizes, dense_sizes, n_labels, train=False):
         local1 = tf.nn.relu(tf.matmul(reshape, weights) + biases, name=scope.name)
         # Add a 50% dropout during training only. Dropout also scales
         # activations such that no rescaling is needed at evaluation time.
-        if train:
-            local1 = tf.nn.dropout(local1, 0.5, seed=SEED)
+
+    with tf.name_scope('dropout'):
+      local1 = tf.nn.dropout(local1, dropout, seed=SEED)
 
     # add final softmax layer
     with tf.variable_scope('softmax_linear') as scope:
@@ -164,21 +173,21 @@ def loss(logits, labels):
           tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels))
 
   tf.get_variable_scope().reuse_variables()
-  regularizers = (tf.nn.l2_loss(tf.get_variable('local1/weights')) 
-                  + tf.nn.l2_loss(tf.get_variable('local1/biases')) 
-                  + tf.nn.l2_loss(tf.get_variable('softmax_linear/weights')) 
+  regularizers = (tf.nn.l2_loss(tf.get_variable('local1/weights'))
+                  + tf.nn.l2_loss(tf.get_variable('local1/biases'))
+                  + tf.nn.l2_loss(tf.get_variable('softmax_linear/weights'))
                   + tf.nn.l2_loss(tf.get_variable('softmax_linear/biases')))
   # Add the regularization term to the loss.
   loss += 5e-4 * regularizers
   tf.scalar_summary('loss', loss)
-  
+
   return loss
 
-def train(loss, batch):
+def training(loss, batch):
   # Decay once per epoch, using an exponential schedule starting at 0.01.
   learning_rate = tf.train.exponential_decay(
       0.01,                       # Base learning rate.
-      batch * BATCH_SIZE,         # Current index into the dataset.
+      batch * train.BATCH_SIZE,         # Current index into the dataset.
       DECAY_STEP_SIZE,                 # Decay step.
       0.95,                       # Decay rate.
       staircase=True)

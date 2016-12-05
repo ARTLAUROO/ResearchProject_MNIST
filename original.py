@@ -129,8 +129,8 @@ def main(argv=None):  # pylint: disable=unused-argument
     num_epochs = 1
   else:
     # Get the data.
-    train_data_filename = maybe_download('train-images-idx3-ubyte.gz')
-    train_labels_filename = maybe_download('train-labels-idx1-ubyte.gz')
+    train_data_filename = maybe_download('training-images-idx3-ubyte.gz')
+    train_labels_filename = maybe_download('training-labels-idx1-ubyte.gz')
     test_data_filename = maybe_download('t10k-images-idx3-ubyte.gz')
     test_labels_filename = maybe_download('t10k-labels-idx1-ubyte.gz')
 
