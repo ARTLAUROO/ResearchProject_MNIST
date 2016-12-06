@@ -1,34 +1,37 @@
 import time
 
+
 class ExperimentID:
   """
   Class that identifies uniquely an experiment. It is constructed out of the
   most important settings used for an experiment and the time it is started.
   """
-  conv = [32, 64]
-  full = [512]
 
-  batch_size = 100
-  n_epochs = 10
+  def __init__(self):
+    self.conv = [32, 64]
+    self.full = [512]
 
-  day = None
-  month = None
-  year = None
-  hour = None
-  minute = None
-  second = None
+    self.batch_size = 100
+    self.n_epochs = 10
+
+    self.day = None
+    self.month = None
+    self.year = None
+    self.hour = None
+    self.minute = None
+    self.second = None
 
   def init_string(self, string):
     """
     Initialise all settings from a string with the following format:
     C-32-64-F-1024_B-100-E-1_05-Dec-2016_11-59-33
     """
-    layers, settings, date, time = string.split('_')
+    layers, settings, date, _time = string.split('_')
 
     layers = layers.split('-')
     f_idx = layers.index('F')
-    self.conv = layers[1:f_idx]
-    self.full = layers[f_idx+1:]
+    self.conv = [int(c) for c in layers[1:f_idx]]
+    self.full = [int(f) for f in layers[f_idx+1:]]
 
     settings = settings.split('-')
     self.batch_size = int(settings[1])
@@ -42,11 +45,10 @@ class ExperimentID:
     self.month = date[1]
     self.year = date[2]
 
-    time = time.split('-')
-    self.hour = time[0]
-    self.minute = time[1]
-    self.second = time[2]
-
+    _time = _time.split('-')
+    self.hour = _time[0]
+    self.minute = _time[1]
+    self.second = _time[2]
 
   def init_settings(self, conv, full, batch_size, n_epochs):
     """
@@ -58,11 +60,11 @@ class ExperimentID:
       infinite
     :return:
     """
-    self.conv = conv
-    self.full = full
+    self.conv = [int(c) for c in conv]
+    self.full = [int(f) for f in full]
 
-    self.batch_size = batch_size
-    self.n_epochs = n_epochs
+    self.batch_size = int(batch_size)
+    self.n_epochs = int(n_epochs)
 
     date_time = time.gmtime()
     self.day = time.strftime('%d', date_time)
