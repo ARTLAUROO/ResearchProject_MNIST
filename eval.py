@@ -79,21 +79,25 @@ def eval_in_batches(data, sess, eval_data, eval_prediction, dropout_pl):
         end = begin + train.BATCH_SIZE
         if end <= size:
             # use no dropout
+            feed_dict = {eval_data: data[begin:end, ...], dropout_pl: 1}
             predictions[begin:end, :] = sess.run(eval_prediction,
-                                                 feed_dict={eval_data: data[begin:end, ...], dropout_pl: 1})
+                                                 feed_dict=feed_dict)
         else:
             # use no dropout
-            batch_predictions = sess.run(eval_prediction,
-                                         feed_dict={eval_data: data[-train.BATCH_SIZE:, ...], dropout_pl: 1})
+            feed_dict = {eval_data: data[-train.BATCH_SIZE:, ...],
+                         dropout_pl: 1}
+            batch_predictions = sess.run(eval_prediction, feed_dict=feed_dict)
             predictions[begin:, :] = batch_predictions[begin - size:, :]
     return predictions
 
 
-def eval_ckpt(path, experiment_id):
-  print('Evaluating CKPT: ' + path)
+def eval_ckpt(ckpt_path, _experiment_id):
+  print('Evaluating CKPT: ' + ckpt_path)
   test_data, test_labels = input.data(False)
   with tf.Graph().as_default(), tf.Session() as sess:
-    images_pl, dropout_pl, prediction = load_model(path, experiment_id, sess)
+    images_pl, dropout_pl, prediction = load_model(ckpt_path,
+                                                   _experiment_id,
+                                                   sess)
     predictions = eval_in_batches(test_data,
                                   sess,
                                   images_pl,
@@ -107,23 +111,21 @@ def eval_ckpt(path, experiment_id):
 def eval_dir(dir_path):
   print('Evaluating DIR: ' + dir_path)
   ckpts = []
-  for file in os.listdir(dir_path):
-    if '.ckpt' in file and not '.meta' in file:
-      ckpts.append(dir_path + file)
+  for f in os.listdir(dir_path):
+    if '.ckpt' in f and '.meta' not in f:
+      ckpts.append(dir_path + f)
 
+  # Load settings from dir name
   dir_name = dir_path.split('/')
   dir_name = dir_name[-2]
+  _experiment_id = ExperimentID()
+  _experiment_id.init_string(dir_name)
 
   for ckpt in sorted(ckpts):
-    # Load settings from dir name
-    ckpt_path_splitted = ckpt.split('/')
-    _experiment_id = ExperimentID()
-    _experiment_id.init_string(dir_name)
-
     eval_ckpt(ckpt, _experiment_id)
 
 if __name__ == '__main__':
-    if (len(sys.argv) < 2):
+    if len(sys.argv) < 2:
       msg = 'usage: python eval.py ckpt/path/file.ckpt ; ' \
             'or: python eval.py ckpt/path/dir/'
       print(msg)
@@ -142,20 +144,3 @@ if __name__ == '__main__':
       if path[-1] is not '/':
         path += '/'
       eval_dir(path)
-
-    # TODO remove
-    # dir_name = ckpt_path.split('/')
-    # dir_name = dir_name[-2]  # drop path prefix
-    # convl_settings, dense_settings = get_settings_from_experiment_id(dir_name)
-    #
-    # with open("hyperparam_search.txt", "a") as result_file:
-    #   s = ''
-    #   for i in convl_settings:
-    #     s += str(i) + ' '
-    #   for i in dense_settings:
-    #     s += str(i) + ' '
-    #   s += str(error) + '\n'
-    #   result_file.write(s)
-
-
-
