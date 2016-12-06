@@ -26,6 +26,7 @@ N_EPOCHS = 10
 BATCH_SIZE = 100
 DROPOUT_RATE = 0.5
 
+CONV_KERNEL_SIZE = 5
 
 def create_experiment_dirs(experiment_id):
   """

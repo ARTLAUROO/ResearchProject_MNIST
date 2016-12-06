@@ -16,114 +16,98 @@ import numpy as np
 from sklearn.decomposition import PCA
 
 import model
-import input as input
+import input
 import eval
+import train
 
-# Are overwritten by main args
-TWO_LAYERS = None             # If true two conv layers are used, else one
-N_KERNELS_LAYER_1 = None
-N_KERNELS_LAYER_2 = None
-N_NODES_FULL_LAYER = None
-SESSION_NAME = None
 
 # TODO multiple channels
-def to_array_shaped (var_shaped_w, var_shaped_b):
-  """" Constructs array[N_KERNELS, KERNEL_SIZE + bias] from corresponding tf vars """
+def to_array_shaped(var_shaped_w, var_shaped_b):
+  """"
+  Returns array[N_KERNELS, KERNEL_SIZE + bias] derived from  the corresponding
+  tf vars var_shaped_w and var_shaped_b
+  """
   height, width, channels, n = var_shaped_w.shape
   flattened_kernel_size = (height * width) + 1
-  array = np.ndarray ([channels * n, flattened_kernel_size])
+  array = np.ndarray([channels * n, flattened_kernel_size])
 
   # fill array with values from kernel
   for kernel_i in xrange(n):
     # fill array with weight values
-    for i in xrange (height):
-      for j in xrange (width):
+    for i in xrange(height):
+      for j in xrange(width):
         array_idx = (i * width) + j
         array[kernel_i, array_idx] = var_shaped_w[i, j, 0, kernel_i]
     # add to array bias values
     array[kernel_i, -1] = var_shaped_b[kernel_i]
-
   return array
 
-# def to_img_shaped (var_shaped_w, var_shaped_b):
-#   """" Constructs array[N_KERNELS, KERNEL_SIZE + bias] from corresponding tf vars """
-#   height, width, channels, n = var_shaped_w.shape
-#   array = np.ndarray([n, 5, 5, 3], dtype=np.float32)
-#
-#   # fill array with values from kernel
-#   for kernel_i in xrange(n):
-#     # fill array with weight values
-#     for i in xrange (height):
-#       for j in xrange (width):
-#         array[kernel_i, i, j, 0] = var_shaped_w[i, j, 0, kernel_i]
-#         array[kernel_i, i, j, 1] = var_shaped_w[i, j, 0, kernel_i]
-#         array[kernel_i, i, j, 2] = var_shaped_w[i, j, 0, kernel_i]
-#     # add to array bias values
-#     # array[kernel_i, -1] = var_shaped_b[kernel_i]
-#
-#   return array
 
 # TODO multiple channels
-def to_var_shaped (array, height, width, channels, n):
+def to_var_shaped(array, height, width, channels, n):
   """" Constructs tf vars from array[N_KERNELS, KERNEL_SIZE + bias] """
-  variable_w = np.ndarray ([height, width, channels, n])
-  variable_b = np.ndarray ([n])
+  variable_w = np.ndarray([height, width, channels, n])
+  variable_b = np.ndarray([n])
 
   # fill variable with values from kernel array
-  for kernel_i in xrange (n):
+  for kernel_i in xrange(n):
     # fill weights
-    for i in xrange (height):
-      for j in xrange (width):
+    for i in xrange(height):
+      for j in xrange(width):
         array_idx = (i * width) + j
         variable_w[i, j, 0, kernel_i] = array[kernel_i, array_idx]
     # fill biases
     variable_b[kernel_i] = array[kernel_i, -1]
-
   return variable_w, variable_b
 
 
 def pca_reduction(weights, biases, n_components):
+  """
+  Applies pca on the weights + biases, n_components is the amount of dimensions
+  kept.
+  :param weights: combined with weights, pca is applied to their combination
+  :param biases: combined with biases, pca is applied to their combination
+  :param n_components: number of dimensions that are allowed to contain info
+  :return: weights, biases on which pca is applied. Plus the total amount of
+  variance kept
+  """
   _, _, _, n_kernels_layer_1 = weights.shape
 
-  pca = PCA(n_components=n_components)
+  _pca = PCA(n_components=n_components)
   array = to_array_shaped(weights, biases)
-
-  array = np.transpose(array)
-  pca_data = pca.fit_transform(array)
-
-  array = pca.inverse_transform(pca_data)
   array = np.transpose(array)
 
-  cumsum = np.cumsum(pca.explained_variance_ratio_) * 100
-  # print('Total of variance kept: %f.2 in %d components' % (cumsum[-1], n_components))
+  pca_data = _pca.fit_transform(array)
+  array = _pca.inverse_transform(pca_data)
 
-  weights, biases = to_var_shaped(array, 5, 5, 1, n_kernels_layer_1)
+  array = np.transpose(array)
+  weights, biases = to_var_shaped(array,
+                                  train.CONV_KERNEL_SIZE,
+                                  train.CONV_KERNEL_SIZE,
+                                  model.N_CHANNELS,
+                                  n_kernels_layer_1)
+
+  cumsum = np.cumsum(_pca.explained_variance_ratio_) * 100
 
   return weights, biases, cumsum[-1]
 
 
-def generate_pca_plots():
-  train_dirs =  [x[0] for x in os.walk(model.CHECKPOINT_DIR)]
-  train_dirs = train_dirs[1:] # skip base dir
-
-  for train_dir in train_dirs:
-    train_ckpts = os.listdir(train_dir)
-
-    for train_ckpt in train_ckpts:
-      if 'meta' in train_ckpt or 'checkpoint' in train_ckpt:
-        continue
-      generate_pca_plot(train_dir + '/' + train_ckpt)
-
-
 def generate_pca_plot(ckpt_path):
+  """
+  Given a checkpoint file generates a pca plot for it.
+  :param ckpt_path: absolute or relative path to the checkpoint file. Must look
+  like this: ../../<EXPERIMENT_ID>/<CHECKPOINT_FILE>
+  :return:
+  """
   print('Generating plot for %s' % ckpt_path)
 
   settings = ckpt_path.split('/')
-  dir_name = settings[-2]
+  experiment_id_str = settings[-2]  # dir name of the checkpoint file
   file_name = settings[-1]
-  if not os.path.exists(model.PLOT_DIR + dir_name):
-    os.makedirs(model.PLOT_DIR + dir_name)
-  plt.savefig(model.PLOT_DIR + dir_name + '/' + file_name + '.jpg')
+
+  if not os.path.exists(model.PLOT_DIR + experiment_id_str):
+    os.makedirs(model.PLOT_DIR + experiment_id_str)
+  plt.savefig(model.PLOT_DIR + experiment_id_str + '/' + file_name + '.jpg')
 
   errors, cumsums = eval_pca(ckpt_path)
 
@@ -139,11 +123,21 @@ def generate_pca_plot(ckpt_path):
              bbox_transform=plt.gcf().transFigure,
              handler_map={error_points: HandlerLine2D(numpoints=1),
                           cumsum_points: HandlerLine2D(numpoints=1)})
+  # plt.show()
 
-  #plt.show()
 
-
-def create_pca_model(ckpt_path):
+def create_pca_ckpt(ckpt_path):
+  """
+  Given a checkpoint file it generates
+  train.CONV_KERNEL_SIZE * train.CONV_KERNEL_SIZE = n new checkpoint files. Each
+  with same values except for the weights and biases in the first convolutional
+  layer. To these values pca is applied, with variance in the dimensions:
+  1 .. n.  These new checkpoint files are placed in a new dir, which is created
+  at the same location as ckpt_path. These new checkpoints file are named after
+  the original checkpoint file plus the pca dimensions and the total variance
+  that was kept in them.
+  :param ckpt_path: path to checkpoint file to which pca must be applied.
+  """
   print('Apply PCA to CKPT: ' + ckpt_path)
   with tf.Graph().as_default(), tf.Session() as sess:
     eval.load_model(ckpt_path, sess)
@@ -166,126 +160,151 @@ def create_pca_model(ckpt_path):
     ckpt_path_splitted = ckpt_path.split('.')
     for i in xrange(25):
       n_components = i + 1
-      pca_weights, pca_biases, cumsum_variance = pca_reduction(original_w, original_b, n_components)
+      pca_weights, pca_biases, cumsum_variance = pca_reduction(original_w,
+                                                               original_b,
+                                                               n_components)
 
       sess.run(variable_w.assign(pca_weights))
       sess.run(variable_b.assign(pca_biases))
 
       # <..>/<..>.ckpt-xxx to # <..>/<..>.pca-n_components.ckpt-xxx
-      pca_ckpt_path = '{}pca-{}_v-{:.2f}_.{}'.format(pca_ckpt_dir, n_components, cumsum_variance, ckpt_path_splitted[-1])
+      pca_ckpt_path = '{}pca-{}_v-{:.2f}_.{}'.format(pca_ckpt_dir, n_components,
+                                                     cumsum_variance,
+                                                     ckpt_path_splitted[-1])
       pca_ckpt_file_path = saver.save(sess, pca_ckpt_path)
       print('Saved PCA checkpoint file: {}'.format(pca_ckpt_file_path))
 
 
-def create_pca_models(ckpt_dir_path):
+def create_pca_ckpts(ckpt_dir_path):
+  """
+  Applies the function create_pca_ckpts to all ckpts in the dir denoted by
+  ckpt_dir_path
+  :param ckpt_dir_path: path to dir containing checkpoints
+  """
   print('Evaluating DIR: ' + ckpt_dir_path)
   ckpts = []
-  for file in os.listdir(ckpt_dir_path):
-    if '.ckpt' in file and not '.meta' in file:
-      ckpts.append(path + file)
+  for f in os.listdir(ckpt_dir_path):
+    if '.ckpt' in f and not '.meta' in f:
+      ckpts.append(path + f)
 
   for ckpt in sorted(ckpts):
-    create_pca_model(ckpt)
+    create_pca_ckpt(ckpt)
 
 
+# TODO
+def generate_pca_plots():
+  train_dirs = [x[0] for x in os.walk(train.CKPT_DIR)]
+  train_dirs = train_dirs[1:]  # skip base dir
+
+  for train_dir in train_dirs:
+    train_checkpoints = os.listdir(train_dir)
+
+    for train_ckpt in train_checkpoints:
+      if 'meta' in train_ckpt or 'checkpoint' in train_ckpt:
+        continue
+      generate_pca_plot(train_dir + '/' + train_ckpt)
+
+
+# TODO
 def eval_pca(ckpt_path):
-    errors = []
-    cumsums = []
+  errors = []
+  cumsums = []
 
-    with tf.Graph().as_default():
-        # Load settings from dir name
-        dir_name = ckpt_path.split('/')
-        dir_name = dir_name[-2]  # drop path prefix
-        convl_settings, dense_settings = eval.get_settings_from_experiment_id(dir_name)
+  with tf.Graph().as_default():
+    # Load settings from dir name
+    dir_name = ckpt_path.split('/')
+    dir_name = dir_name[-2]  # drop path prefix
+    convl_settings, dense_settings = eval.get_settings_from_experiment_id(
+      dir_name)
 
-        # Construct inference
-        data_batch = tf.placeholder(model.data_type(),
-                                    shape=(model.BATCH_SIZE,
-                                           model.IMAGE_SIZE,
-                                           model.IMAGE_SIZE,
-                                           model.N_CHANNELS))
-        logits = model.inference(data_batch,
-                                 convl_settings,
-                                 dense_settings,
-                                 model.NUM_LABELS,
-                                 False)  # eval inference
+    # Construct inference
+    data_batch = tf.placeholder(model.data_type(),
+                                shape=(model.BATCH_SIZE,
+                                       model.IMAGE_SIZE,
+                                       model.IMAGE_SIZE,
+                                       model.N_CHANNELS))
+    logits = model.inference(data_batch,
+                             convl_settings,
+                             dense_settings,
+                             model.NUM_LABELS,
+                             False)  # eval inference
 
-        prediction = tf.nn.softmax(logits)
+    prediction = tf.nn.softmax(logits)
 
-        saver = tf.train.Saver()
+    saver = tf.train.Saver()
 
-        merged = tf.merge_all_summaries()
+    merged = tf.merge_all_summaries()
 
-        with tf.Session() as sess:
-            saver.restore(sess, ckpt_path)
+    with tf.Session() as sess:
+      saver.restore(sess, ckpt_path)
 
+      # apply PCA
+      with tf.variable_scope('conv1') as scope:
+        scope.reuse_variables()
 
-            # apply PCA
-            with tf.variable_scope('conv1') as scope:
-                scope.reuse_variables()
+        variable_w = tf.get_variable('weights')
+        variable_b = tf.get_variable('biases')
 
-                variable_w = tf.get_variable('weights')
-                variable_b = tf.get_variable('biases')
+        original_w = variable_w.eval()
+        original_b = variable_b.eval()
 
+        settings = ckpt_path.split('/')
+        dir_name = settings[-2]
 
-                original_w = variable_w.eval()
-                original_b = variable_b.eval()
-
-                settings = ckpt_path.split('/')
-                dir_name = settings[-2]
-
-                # Plot original kernel weights
-                # array = to_img_shaped(original_w, original_b)
-                # for i in xrange(len(array)):
-                #     plt.imshow(array[i], interpolation='none')
-                #     # plt.show()
-                #     file_name = 'original_w-' + str(i)
-                #     plt.savefig(mnist.PLOT_DIR + dir_name + '/' + file_name + '.jpg')
-
+        # Plot original kernel weights
+        # array = to_img_shaped(original_w, original_b)
+        # for i in xrange(len(array)):
+        #     plt.imshow(array[i], interpolation='none')
+        #     # plt.show()
+        #     file_name = 'original_w-' + str(i)
+        #     plt.savefig(mnist.PLOT_DIR + dir_name + '/' + file_name + '.jpg')
 
 
-                # pca_range = original_w.shape[-1]
-                pca_range = 25
 
-                data, labels = input.data(False)
-                for i in xrange(pca_range):
-                    writer = tf.train.SummaryWriter(model.TENSORBOARD_DIRECTORY + '/pca_components-' + str(i),
-                                                    sess.graph)
+        # pca_range = original_w.shape[-1]
+        pca_range = 25
 
-                    n_components = i + 1
+        data, labels = input.data(False)
+        for i in xrange(pca_range):
+          writer = tf.train.SummaryWriter(
+            model.TENSORBOARD_DIRECTORY + '/pca_components-' + str(i),
+            sess.graph)
 
-                    weights, biases, cumsum = pca_reduction(original_w,
-                                                            original_b,
-                                                            n_components)
+          n_components = i + 1
 
-                    # plot adjusted weights
-                    # array = to_img_shaped(weights, biases)
-                    # for j in xrange(len(array)):
-                    #     plt.imshow(array[j], interpolation='none')
-                    #     # plt.show()
-                    #     file_name = 'pca-' + str(i) + '_w-' + str(j)
-                    #     plt.savefig(mnist.PLOT_DIR + dir_name + '/' + file_name + '.jpg')
+          weights, biases, cumsum = pca_reduction(original_w,
+                                                  original_b,
+                                                  n_components)
 
-                    # plot passed thourgh values
-                    summary = sess.run(merged,
-                                       feed_dict={data_batch: data[:64, ...]})
-                    writer.add_summary(summary, i)
+          # plot adjusted weights
+          # array = to_img_shaped(weights, biases)
+          # for j in xrange(len(array)):
+          #     plt.imshow(array[j], interpolation='none')
+          #     # plt.show()
+          #     file_name = 'pca-' + str(i) + '_w-' + str(j)
+          #     plt.savefig(mnist.PLOT_DIR + dir_name + '/' + file_name + '.jpg')
 
-                    sess.run(variable_w.assign(weights))
-                    sess.run(variable_b.assign(biases))
-                    cumsums.append(cumsum)
+          # plot passed thourgh values
+          summary = sess.run(merged,
+                             feed_dict={data_batch: data[:64, ...]})
+          writer.add_summary(summary, i)
 
-                    print("PCA:%d" % i)
-                    predictions = eval.eval_in_batches(data,
-                                                       sess,
-                                                       data_batch,
-                                                       prediction)
-                    error = model.error_rate(predictions, labels)
-                    print('PCA %d error: %.2f%%' % (n_components, error))
-                    errors.append(error)
-    return errors, cumsums
+          sess.run(variable_w.assign(weights))
+          sess.run(variable_b.assign(biases))
+          cumsums.append(cumsum)
+
+          print("PCA:%d" % i)
+          predictions = eval.eval_in_batches(data,
+                                             sess,
+                                             data_batch,
+                                             prediction)
+          error = model.error_rate(predictions, labels)
+          print('PCA %d error: %.2f%%' % (n_components, error))
+          errors.append(error)
+  return errors, cumsums
 
 
+# TODO
 def pca(ckpt_path, convs, locals):
   print("PCA for ckpt file: %s" % ckpt_path)
 
@@ -314,7 +333,6 @@ def pca(ckpt_path, convs, locals):
                                model.NUM_LABELS,
                                False)  # eval inference
 
-
     # Predictions for the test and validation, which we'll compute less often.
     eval_prediction = tf.nn.softmax(logits)
 
@@ -338,7 +356,7 @@ def pca(ckpt_path, convs, locals):
         original_b = variable_b.eval()
 
         for i in xrange(1):
-          weights, biases = pca_reduction(original_w, original_b, i+1)
+          weights, biases = pca_reduction(original_w, original_b, i + 1)
 
           sess.run(variable_w.assign(weights))
           sess.run(variable_b.assign(biases))
@@ -350,21 +368,24 @@ def pca(ckpt_path, convs, locals):
                                 eval_data,
                                 eval_prediction)
 
-        # # Save variables
-        # ckpt_path = mnist.CHECKPOINT_DIR + 'pca.ckpt'
-        # ckpt_path = saver.save(sess, ckpt_path)
-        # print('Saved checkpoint file: %s' % ckpt_path)
-        #
-        # # Print test error after pca
-        # mnist_eval.eval(ckpt_path)
+          # # Save variables
+          # ckpt_path = mnist.CHECKPOINT_DIR + 'pca.ckpt'
+          # ckpt_path = saver.save(sess, ckpt_path)
+          # print('Saved checkpoint file: %s' % ckpt_path)
+          #
+          # # Print test error after pca
+          # mnist_eval.eval(ckpt_path)
+
 
 if __name__ == '__main__':
-  if (len(sys.argv) < 2):
-    print('usage: python pca.py ckpt/path/file.ckpt ; or: python pca.py ckpt/path/dir/')
+  if len(sys.argv) < 2:
+    msg = 'usage: python pca.py ckpt/path/file.ckpt ; ' \
+          'or: python pca.py ckpt/path/dir/'
+    print(msg)
     exit()
 
   path = sys.argv[1]
   if '.ckpt' in path:
-    create_pca_model(path)
+    create_pca_ckpt(path)
   else:
-    create_pca_models(path)
+    create_pca_ckpts(path)
