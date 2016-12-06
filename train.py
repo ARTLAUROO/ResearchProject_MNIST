@@ -3,14 +3,14 @@ from __future__ import division
 from __future__ import print_function
 
 import sys
-import time
 
-from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
 import model
-import input as input
+import input
 import eval
+
+from experiment_id import ExperimentID
 
 # Settings
 BASE_DIR = '/home/s1259008/research_project/experiments/'
@@ -27,38 +27,15 @@ BATCH_SIZE = 100
 DROPOUT_RATE = 0.5
 
 
-def generate_experiment_id(conv_settings, full_settings):
-  date_time = time.strftime("%d-%b-%Y_%H-%M-%S", time.gmtime())
-
-  # Add conv layer settings
-  layer_settings = 'C'
-  for setting in conv_settings:
-    layer_settings += '-{:d}'.format(setting)
-
-  # Add full layer settings
-  layer_settings += '-F'
-  for setting in full_settings:
-    layer_settings += '-{:d}'.format(setting)
-
-  # Add batch and epoch settings
-  n_epochs = N_EPOCHS
-  if n_epochs == -1:
-    n_epochs = None
-
-  train_settings = 'B-{}-E-{}'.format(BATCH_SIZE, n_epochs)
-
-  return '{}_{}_{}'.format(layer_settings, train_settings, date_time)
-
-
 def create_experiment_dirs(experiment_id):
-  ckpt_path = CKPT_DIR + experiment_id
+  """
+  Creates the directorries needed to run an experiment. Currently only creates
+  the dir to save the checkpoint files.
+  :param experiment_id: id belonging to the experiment.
+  """
+  ckpt_path = CKPT_DIR + str(experiment_id)
   if not tf.gfile.Exists(ckpt_path):
     tf.gfile.MakeDirs(ckpt_path)
-
-  # Not needed I think, created by summary_writer
-  # logs_path = LOGS_DIR + experiment_id
-  # if not tf.gfile.Exists(logs_path):
-  #   tf.gfile.MakeDirs(logs_path)
 
 
 def calc_total_params():
@@ -77,7 +54,19 @@ def calc_total_params():
 
 
 def train(conv_settings, full_settings):
-  experiment_id = generate_experiment_id(conv_settings, full_settings)
+  """
+  Sets up a network according to the settings specified and trains it with the
+  settings specified by the global parameters.
+  :param conv_settings: list with ints signifying the size of each conv layer,
+    can be empty if conv layers are to be omitted
+  :param full_settings: list with ints signifying the size of each full layer,
+    can be empty if full layers are to be omitted
+  """
+  experiment_id = ExperimentID()
+  experiment_id.init_settings(conv_settings,
+                              full_settings,
+                              BATCH_SIZE,
+                              N_EPOCHS)
   print('Experiment id {}'.format(experiment_id))
 
   with tf.Graph().as_default():
@@ -85,15 +74,19 @@ def train(conv_settings, full_settings):
 
     # Inputs
     images_pl = tf.placeholder(model.data_type(),
-                                  shape=(BATCH_SIZE,
-                                         model.IMAGE_SIZE,
-                                         model.IMAGE_SIZE,
-                                         model.N_CHANNELS))
+                               shape=(BATCH_SIZE,
+                                      model.IMAGE_SIZE,
+                                      model.IMAGE_SIZE,
+                                      model.N_CHANNELS))
     labels_pl = tf.placeholder(tf.int64, shape=(BATCH_SIZE,))
     dropout_pl = tf.placeholder(tf.float32)
 
     # Inference
-    logits = model.inference(images_pl, conv_settings, full_settings, model.N_LABELS, dropout_pl)
+    logits = model.inference(images_pl,
+                             conv_settings,
+                             full_settings,
+                             model.N_LABELS,
+                             dropout_pl)
     prediction = tf.nn.softmax(logits)
 
     # Loss
@@ -106,13 +99,13 @@ def train(conv_settings, full_settings):
     saver = tf.train.Saver(max_to_keep=None)
     # Create dir for ckpts
     create_experiment_dirs(experiment_id)
-    ckpt_path = CKPT_DIR + experiment_id + '/' + CKPT_FILENAME
+    ckpt_path = '{}{}/{}'.format(CKPT_DIR, experiment_id, CKPT_FILENAME)
 
     # Setup summary writer for Tensorboard
     merged = tf.merge_all_summaries()
 
     # Get data.
-    train_images, train_labels, validation_images, validation_labels = input.data(True)
+    train_images, train_labels, valid_images, valid_labels = input.data(True)
     train_size = train_labels.shape[0]
 
     #  Train
@@ -132,18 +125,23 @@ def train(conv_settings, full_settings):
         batch_data = train_images[offset:(offset + BATCH_SIZE), ...]
         batch_labels = train_labels[offset:(offset + BATCH_SIZE)]
         # Update net
-        feed_dict = {images_pl: batch_data, labels_pl: batch_labels, dropout_pl: DROPOUT_RATE}
-        _, l, train_predictions, summary = sess.run([train_op, loss, prediction, merged], feed_dict=feed_dict)
+        feed_dict = {images_pl: batch_data,
+                     labels_pl: batch_labels,
+                     dropout_pl: DROPOUT_RATE}
+        ops = [train_op, loss, prediction, merged]
+        _, l, train_predictions, summary = sess.run(ops, feed_dict=feed_dict)
 
         # Validate
         if step != 0 and step % EVAL_FREQ == 0:
-          validation_predictions = eval.eval_in_batches(validation_images,
+          validation_predictions = eval.eval_in_batches(valid_images,
                                                         sess,
                                                         images_pl,
                                                         prediction,
                                                         dropout_pl)
-          validation_error = model.error_rate(validation_predictions, validation_labels)
-          print('Validation error: {:.2f}% after {}/{} steps'.format(validation_error, step, n_steps))
+          validation_error = model.error_rate(validation_predictions,
+                                              valid_labels)
+          msg = 'Validation error: {:.2f}% after {}/{} steps'
+          print(msg.format(validation_error, step, n_steps))
 
         # Save
         if step != 0 and step % SAVE_FREQ == 0 or step + 1 == n_steps:
@@ -153,14 +151,19 @@ def train(conv_settings, full_settings):
         # Summaries
         if step % SUMMARY_FREQ == 0:
           train_error = model.error_rate(train_predictions, batch_labels)
-          print('Training error: {:.2f}% after {}/{} steps, loss {:.2f}'.format(train_error, step, n_steps, l))
+          msg = 'Training error: {:.2f}% after {}/{} steps, loss {:.2f}'
+          print(msg.format(train_error, step, n_steps, l))
           summary_writer.add_summary(summary, step)
 
         step += 1
 
       # Evaluate
       test_images, test_labels = input.data(False)
-      test_predictions = eval.eval_in_batches(test_images, sess, images_pl, prediction, dropout_pl)
+      test_predictions = eval.eval_in_batches(test_images,
+                                              sess,
+                                              images_pl,
+                                              prediction,
+                                              dropout_pl)
       test_error = model.error_rate(test_predictions, test_labels)
       print('Test error: {:.2f}%'.format(test_error))
 
@@ -168,8 +171,8 @@ def train(conv_settings, full_settings):
 if __name__ == '__main__':
   """
   Usage, one of the following:
-  python training.py n_conv_1 n_conv_2 n_full_1
-  python training.py n_conv_1 n_full_1
+  python train.py n_conv_1 n_conv_2 n_full_1
+  python train.py n_conv_1 n_full_1
   """
 
   n_args = len(sys.argv)
