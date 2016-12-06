@@ -77,10 +77,11 @@ def create_plots(dir_path):
   :param dir_path: example:
   ../experiments/mnist/ckpts/C-32-64-F-1024_B-100-E-10_05-Dec-2016_12-04-52/
   """
-  print('Creating plots')
+  print('Creating plots for dir: {}'.format(dir_path))
   for f in os.listdir(dir_path):
     if '-pca' in f:
-      _errors, _cumsums, _experiment_id = get_errors_and_cumsums(dir_path + f)
+      ckpt_dir = dir_path + f + '/'
+      _errors, _cumsums, _experiment_id = get_errors_and_cumsums(ckpt_dir)
       create_plot(_errors, _cumsums, _experiment_id)
 
 
