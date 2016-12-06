@@ -7,3 +7,5 @@ NOTES
 *.txt
 train
 *.swp
+playground
+hyper_params
