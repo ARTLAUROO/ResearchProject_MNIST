@@ -15,9 +15,9 @@
 
 """Simple, end-to-end, LeNet-5-like convolutional MNIST inference example.
 
-This should achieve a test error of 0.7%. Please keep this inference as simple and
-linear as possible, it is meant as a tutorial for simple convolutional models.
-Run with --self_test on the command line to execute a short self-test.
+This should achieve a test error of 0.7%. Please keep this inference as simple
+and linear as possible, it is meant as a tutorial for simple convolutional
+models. Run with --self_test on the command line to execute a short self-test.
 """
 from __future__ import absolute_import
 from __future__ import division
