@@ -2,95 +2,100 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from six.moves import xrange  # pylint: disable=redefined-builtin
-
 import sys
 import os
 
 import matplotlib.pyplot as plt
 from matplotlib.legend_handler import HandlerLine2D
 
-import tensorflow as tf
-
-import numpy as np
-from sklearn.decomposition import PCA
-
-import model
-import input as input
 import eval
+from experiment_id import ExperimentID
 
 
 PLOT_DIR = '/home/s1259008/research_project/experiments/mnist/plots/'
 
 
-def get_errors_and_cumsums(pca_dir):
-  print('Get errors and cumsums: ' + pca_dir)
-  errors = []
-  cumsums = []
+def get_errors_and_cumsums(ckpt_path):
+  """
+  Calculates the errors and cumsums belonging to a checkpoint.
+  :param ckpt_path: Checkpoint to calculate pca errors and cumsums from.
+  :return: errors, cumsums and the experiment id
+  """
+  print('Getting errors and cumsums for checkpoint: ' + ckpt_path)
 
   # Load settings from dir name
-  pca_dir_splitted = pca_dir.split('/')
-  experiment_id = None
-  for string in pca_dir_splitted:
-    if 'C-' in string:
-      experiment_id = string
-      break
-  assert experiment_id != None
+  ckpts_dir_path_splitted = ckpt_path.split('/')
+  _experiment_id = ExperimentID()
+  _experiment_id.init_string(ckpts_dir_path_splitted[-1])
 
-  errors = [0]*25
-  cumsums = [0]*25
+  _errors = [0] * 25
+  _cumsums = [0] * 25
 
-  for file in os.listdir(pca_dir):
-    if '.ckpt' in file and not '.meta' in file:
+  for f in os.listdir(ckpt_path):
+    if '.ckpt' in f and '.meta' not in f:
+      error = eval.eval_ckpt(ckpt_path, _experiment_id)
 
-      error = eval.eval_ckpt(pca_dir, experiment_id)
+      file_splitted = f.split('_')
+      cumsum = float(file_splitted[1][2:])  # Omit prefix: v-
 
-      file_splitted = file.split('_')
-      cumsum = float(file_splitted[1][2:]) # omit prefix: v-
+      idx = int(file_splitted[0][4:]) - 1  # Get applied pca dim as idx
+      _errors[idx] = error
+      _cumsums[idx] = cumsum
 
-      idx = int(file_splitted[0][4:]) - 1
-      errors[idx] = error
-      cumsums[idx] = cumsum
+  return _errors, _cumsums, _experiment_id
 
-  return errors, cumsums, experiment_id
 
-def create_plot(errors, cumsums, experiment_id):
-  print('Creating plot: ' + experiment_id)
+def create_plot(_errors, _cumsums, _experiment_id):
+  """
+  Given errors, cumsums and an experiment id a neat plot is generated. It is
+  stored in the plots dir and named after the experiment id.
+  :param _errors: list
+  :param _cumsums: list
+  :param _experiment_id:
+  """
+  print('Creating plot: ' + _experiment_id)
   plt.figure()
-  plt.title(experiment_id)
+  plt.title(_experiment_id)
   plt.ylabel('Percentage')
   plt.xlabel('N PCA components')
-  plt.axis([-0.5, len(errors), -2, 102])
+  plt.axis([-0.5, len(_errors), -2, 102])
   plt.grid(True)
-  error_points, = plt.plot(errors, 'ro', label='Error on test set')
-  cumsum_points, = plt.plot(cumsums, 'bx', label='Kernel variance kept')
+  error_points, = plt.plot(_errors, 'ro', label='Error on test set')
+  cumsum_points, = plt.plot(_cumsums, 'bx', label='Kernel variance kept')
 
   plt.legend(bbox_to_anchor=(0.9, 0.85),
              bbox_transform=plt.gcf().transFigure,
              handler_map={error_points: HandlerLine2D(numpoints=1),
                           cumsum_points: HandlerLine2D(numpoints=1)})
-  plt.savefig(PLOT_DIR + experiment_id + '.jpg')
+  plt.savefig(PLOT_DIR + _experiment_id + '.jpg')
   # plt.show()
 
 
-def create_plots(path):
+def create_plots(dir_path):
+  """
+  Create plots for all pca dirs in the dir denoted by dir_path.
+  :param dir_path: example:
+  ../experiments/mnist/ckpts/C-32-64-F-1024_B-100-E-10_05-Dec-2016_12-04-52/
+  """
   print('Creating plots')
-  # pass experiment dir path
-  # example: ../experiments/mnist/ckpts/C-32-64-F-1024_B-100-E-10_05-Dec-2016_12-04-52/
-  for file in os.listdir(path):
-    if '-pca' in file:
-      errors, cumsums, experiment_id = get_errors_and_cumsums(path + file)
-      create_plot(errors, cumsums, experiment_id)
+  for f in os.listdir(dir_path):
+    if '-pca' in f:
+      _errors, _cumsums, _experiment_id = get_errors_and_cumsums(dir_path + f)
+      create_plot(_errors, _cumsums, _experiment_id)
 
 
 if __name__ == '__main__':
-  if (len(sys.argv) < 2):
-    print('usage: python plot.py ckpt/path/file.pca.ckpt ; or: python plot.py pca-ckpts/path/dir/')
+  if len(sys.argv) < 2:
+    msg = 'usage: python plot.py ckpt/path/file.pca.ckpt ; ' \
+          'or: python plot.py pca-ckpts/path/dir/'
+    print(msg)
     exit()
 
   path = sys.argv[1]
   if '-pca' in path:
+    # Specific checkpoint to which pca must be applied
     errors, cumsums, experiment_id = get_errors_and_cumsums(path)
     create_plot(errors, cumsums, experiment_id)
   else:
+    # Dir full of checkpoints to which pca must be applied
     create_plots(path)
