@@ -9,3 +9,4 @@ train
 *.swp
 playground
 hyper_params
+scripts
