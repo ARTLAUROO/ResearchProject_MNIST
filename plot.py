@@ -15,25 +15,26 @@ from experiment_id import ExperimentID
 PLOT_DIR = '/home/s1259008/research_project/experiments/mnist/plots/'
 
 
-def get_errors_and_cumsums(ckpt_path):
+def get_errors_and_cumsums(ckpt_dir_path):
   """
   Calculates the errors and cumsums belonging to a checkpoint.
-  :param ckpt_path: Checkpoint to calculate pca errors and cumsums from.
+  :param ckpt_dir_path: Checkpoint to calculate pca errors and cumsums from.
   :return: errors, cumsums and the experiment id
   """
-  print('Getting errors and cumsums for checkpoint: ' + ckpt_path)
+  print('Getting errors and cumsums for checkpoint: ' + ckpt_dir_path)
 
   # Load settings from dir name
-  ckpts_dir_path_splitted = ckpt_path.split('/')
+  ckpts_dir_path_splitted = ckpt_dir_path.split('/')
+  dir_name = ckpts_dir_path_splitted[-3]
   _experiment_id = ExperimentID()
-  _experiment_id.init_string(ckpts_dir_path_splitted[-1])
+  _experiment_id.init_string(dir_name)
 
   _errors = [0] * 25
   _cumsums = [0] * 25
 
-  for f in os.listdir(ckpt_path):
+  for f in os.listdir(ckpt_dir_path):
     if '.ckpt' in f and '.meta' not in f:
-      error = eval.eval_ckpt(ckpt_path, _experiment_id)
+      error = eval.eval_ckpt(ckpt_dir_path + f, _experiment_id)
 
       file_splitted = f.split('_')
       cumsum = float(file_splitted[1][2:])  # Omit prefix: v-
@@ -53,9 +54,8 @@ def create_plot(_errors, _cumsums, _experiment_id):
   :param _cumsums: list
   :param _experiment_id:
   """
-  print('Creating plot: ' + _experiment_id)
+  print('Creating plot: {}'.format(_experiment_id))
   plt.figure()
-  plt.title(_experiment_id)
   plt.ylabel('Percentage')
   plt.xlabel('N PCA components')
   plt.axis([-0.5, len(_errors), -2, 102])
@@ -67,7 +67,7 @@ def create_plot(_errors, _cumsums, _experiment_id):
              bbox_transform=plt.gcf().transFigure,
              handler_map={error_points: HandlerLine2D(numpoints=1),
                           cumsum_points: HandlerLine2D(numpoints=1)})
-  plt.savefig(PLOT_DIR + _experiment_id + '.jpg')
+  plt.savefig(PLOT_DIR + str(_experiment_id) + '.jpg')
   # plt.show()
 
 
@@ -93,6 +93,8 @@ if __name__ == '__main__':
 
   path = sys.argv[1]
   if '-pca' in path:
+    if path[-1] is not '/':
+      path += '/'
     # Specific checkpoint to which pca must be applied
     errors, cumsums, experiment_id = get_errors_and_cumsums(path)
     create_plot(errors, cumsums, experiment_id)

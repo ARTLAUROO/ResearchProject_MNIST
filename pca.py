@@ -18,6 +18,9 @@ import train
 
 
 # TODO multiple channels
+from experiment_id import ExperimentID
+
+
 def to_array_shaped(var_shaped_w, var_shaped_b):
   """"
   Returns array[N_KERNELS, KERNEL_SIZE + bias] derived from  the corresponding
@@ -102,7 +105,12 @@ def create_pca_ckpt(ckpt_path):
   """
   print('Apply PCA to CKPT: ' + ckpt_path)
   with tf.Graph().as_default(), tf.Session() as sess:
-    eval.load_model(ckpt_path, sess)
+    dir_name = ckpt_path.split('/')
+    dir_name = dir_name[-2]
+    _experiment_id = ExperimentID()
+    _experiment_id.init_string(dir_name)
+
+    eval.load_model(ckpt_path, _experiment_id, sess)
 
     saver = tf.train.Saver(max_to_keep=None)
 
@@ -164,4 +172,6 @@ if __name__ == '__main__':
   if '.ckpt' in path:
     create_pca_ckpt(path)
   else:
+    if path[-1] is not '/':
+      path += '/'
     create_pca_ckpts(path)
