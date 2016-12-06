@@ -1,3 +1,21 @@
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+# Code (adapted, by Arthur van Rooijen) from:
+# https://github.com/tensorflow/tensorflow/blob/master/tensorflow/examples/tutorials/mnist/input_data.py
+
+"""Functions for downloading and reading MNIST data."""
 import gzip
 import os
 
@@ -9,20 +27,24 @@ import numpy
 
 import model
 
+
+# Settings
 DATA_DIR = '/tmp/mnist/data/'
 MNIST_URL = 'http://yann.lecun.com/exdb/mnist/'
 
+
 def maybe_download(filename):
   """Download the data from Yann's website, unless it's already here."""
+
   if not tf.gfile.Exists(DATA_DIR):
     tf.gfile.MakeDirs(DATA_DIR)
-  filepath = os.path.join(DATA_DIR, filename)
-  if not tf.gfile.Exists(filepath):
-    filepath, _ = urllib.request.urlretrieve(MNIST_URL + filename, filepath)
-    with tf.gfile.GFile(filepath) as f:
+  file_path = os.path.join(DATA_DIR, filename)
+  if not tf.gfile.Exists(file_path):
+    file_path, _ = urllib.request.urlretrieve(MNIST_URL + filename, file_path)
+    with tf.gfile.GFile(file_path) as f:
       size = f.Size()
     print('Successfully downloaded', filename, size, 'bytes.')
-  return filepath
+  return file_path
 
 
 def extract_data(filename, num_images):
@@ -33,11 +55,17 @@ def extract_data(filename, num_images):
   print('Extracting', filename)
   with gzip.open(filename) as bytestream:
     bytestream.read(16)
-    buf = bytestream.read(model.IMAGE_SIZE * model.IMAGE_SIZE * num_images * model.N_CHANNELS)
-    data = numpy.frombuffer(buf, dtype=numpy.uint8).astype(numpy.float32)
-    data = (data - (model.PIXEL_DEPTH / 2.0)) / model.PIXEL_DEPTH
-    data = data.reshape(num_images, model.IMAGE_SIZE, model.IMAGE_SIZE, model.N_CHANNELS)
-    return data
+    buf = bytestream.read(model.IMAGE_SIZE
+                          * model.IMAGE_SIZE
+                          * num_images
+                          * model.N_CHANNELS)
+    read_data = numpy.frombuffer(buf, dtype=numpy.uint8).astype(numpy.float32)
+    read_data = (read_data - (model.PIXEL_DEPTH / 2.0)) / model.PIXEL_DEPTH
+    read_data = read_data.reshape(num_images,
+                                  model.IMAGE_SIZE,
+                                  model.IMAGE_SIZE,
+                                  model.N_CHANNELS)
+    return read_data
 
 
 def extract_labels(filename, num_images):
@@ -50,35 +78,30 @@ def extract_labels(filename, num_images):
   return labels
 
 
-def fake_data(num_images):
-  """Generate a fake dataset that matches the dimensions of MNIST."""
-  data = numpy.ndarray(
-      shape=(num_images, model.IMAGE_SIZE, model.IMAGE_SIZE, model.N_CHANNELS),
-      dtype=numpy.float32)
-  labels = numpy.zeros(shape=(num_images,), dtype=numpy.int64)
-  for image in xrange(num_images):
-    label = image % 2
-    data[image, :, :, 0] = label - 0.5
-    labels[image] = label
-  return data, labels
-
 def data(train):
+  """
+  Returns the MNIST data sets of LeCunn.
+  :param train: If true train & validation sets are returned. Else the test sets
+  are returned
+  :return: If train was true then:
+  training images, training labels, validation images, validation labels
+  Else:
+  test images, test labels
+  """
   if train:
     images_filename = 'train-images-idx3-ubyte.gz'
     labels_filename = 'train-labels-idx1-ubyte.gz'
-    size = 60000 #inference.TRAIN_SIZE
+    size = 60000  # inference.TRAIN_SIZE
   else:
     images_filename = 't10k-images-idx3-ubyte.gz'
     labels_filename = 't10k-labels-idx1-ubyte.gz'
-    size = 10000 #inference.TEST_SIZE
-  # Get the data.
+    size = 10000  # inference.TEST_SIZE
 
-  images_filepath = maybe_download(images_filename)
-  labels_filepath = maybe_download(labels_filename)
+  images_file_path = maybe_download(images_filename)
+  labels_file_path = maybe_download(labels_filename)
 
-  # Extract it into numpy arrays.
-  images = extract_data(images_filepath, size)
-  labels = extract_labels(labels_filepath, size)
+  images = extract_data(images_file_path, size)
+  labels = extract_labels(labels_file_path, size)
 
   if train:
     # Generate a validation set.
